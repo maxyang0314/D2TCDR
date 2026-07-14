@@ -10,7 +10,7 @@ from model import create_model_diffu, Att_Diffuse_model
 from trainer import model_train
 import pandas as pd
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 
 parser = argparse.ArgumentParser()
@@ -156,7 +156,18 @@ def main(args):
     args.patience = 5
     pretrain_flag = False
     best_model, test_results = model_train(t_tra_data, t_val_data, t_test_data, None, rec_diffu_joint_model, args, logger, pretrain_flag)
+    target_model_path = (
+        "./saved_model/"
+        + args.s_dataset
+        + "_"
+        + args.t_dataset
+        + "/target_model.pth"
+    )
 
+    torch.save(best_model.state_dict(), target_model_path)
+
+    print("Target model saved at:", target_model_path)
+    logger.info("Target model saved at: %s", target_model_path)
 
 if __name__ == '__main__':
     main(args)

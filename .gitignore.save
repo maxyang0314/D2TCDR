@@ -1,0 +1,490 @@
+
+可以先放入：
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.so
+
+# Environment
+.env
+.venv/
+venv/
+env/
+
+# Dataset
+dataset/
+datasets/
+data/
+
+# Model checkpoints
+checkpoint/
+checkpoints/
+ckpt/
+saved/
+*.pth
+*.pt
+*.ckpt
+
+# Training outputs
+runs/
+logs/
+wandb/
+output/
+outputs/
+
+# IDE
+.vscode/
+.idea/
+
+# Operating system
+.DS_Store
+Thumbs.db
+
+儲存後先檢查：
+
+git status
+
+確認沒有把大型 dataset、模型 checkpoint、密碼或 token 加進去。GitHub 也明確警告不要 commit 或 push 密碼、API Key 等敏感資訊。
+
+GitHub 會阻擋超過 100 MiB 的一般 Git 檔案；超過限制需要 Git LFS，但對你的專題而言，更建議不要把 dataset 和訓練權重放進 Git repository。
+
+四、建立第一個「可回復版本」
+
+先查看修改：
+
+git status
+git diff
+
+把檔案加入暫存區：
+
+git add .
+
+再次確認：
+
+git status
+
+建立第一個版本：
+
+git commit -m "Baseline: original code runs successfully"
+
+推送到自己的 GitHub：
+
+git push -u origin "$(git branch --show-current)"
+
+例如目前分支是 main，等同於：
+
+git push -u origin main
+
+-u 只需要第一次設定，之後通常直接執行 git push 即可。GitHub 官方的基本推送格式是 git push <remote> <branch>。
+
+五、建議替重要版本加上 Tag
+
+例如目前是「成功跑通原始程式，尚未修改 popular/unpopular 實驗」的版本，可以建立一個標籤：
+
+git tag -a baseline-runnable -m "Runnable baseline before popular-unpopular experiment"
+git push origin baseline-runnable
+
+之後即使有非常多 commit，也可以直接找到：
+
+baseline-runnable
+
+你也可以依照實驗階段命名：
+
+git tag -a v1-original -m "Original experiment"
+git tag -a v2-popular-split -m "Add popular and unpopular evaluation"
+git tag -a v3-new-loss -m "Add modified loss function"
+
+上傳全部標籤：
+
+git push origin --tags
+
+Git tag 適合標記重要里程碑或穩定版本。
+
+六、之後每次修改程式的標準流程
+
+假設你修改了：
+
+main.py
+utils/evaluation.py
+
+先查看差異：
+
+git status
+git diff
+
+只加入相關檔案：
+
+git add main.py utils/evaluation.py
+
+建立版本：
+
+git commit -m "Add popular and unpopular item evaluation"
+
+上傳：
+
+git push
+
+建議 commit 訊息直接描述做了什麼，例如：
+
+git commit -m "Fix dataset path for Movies_and_TV"
+git commit -m "Add item popularity calculation"
+git commit -m "Evaluate HR and NDCG by popularity group"
+git commit -m "Fix CUDA device selection"
+
+不要一直使用沒有意義的名稱：
+
+git commit -m "update"
+git commit -m "modify"
+git commit -m "test"
+七、如何查看以前上傳的版本
+
+執行：
+
+git log --oneline --decorate --graph
+
+可能看到：
+
+a8c9712 (HEAD -> main) Add popular and unpopular evaluation
+715b9f3 Fix dataset loading
+34a12d8 (tag: baseline-runnable) Baseline: original code runs successfully
+
+左側的：
+
+a8c9712
+715b9f3
+34a12d8
+
+就是每個 commit 的版本編號。
+
+查看某一版本修改了什麼：
+
+git show 715b9f3
+八、回復到舊版本的不同方式
+情況 1：只想暫時查看舊版本
+git switch --detach 34a12d8
+
+此時程式會變成該版本，但不建議直接在這個狀態修改。
+
+看完後回到最新版：
+
+git switch main
+
+git switch 會切換分支或指定版本，並更新工作目錄內容。
+
+情況 2：從舊版本建立一條新分支
+
+這是最安全的方法：
+
+git switch -c restore-baseline 34a12d8
+
+現在你會得到一個新分支：
+
+restore-baseline
+
+它的內容是舊版本，但原本的 main 完全不受影響。
+
+查看所有分支：
+
+git branch
+
+回到最新版：
+
+git switch main
+情況 3：只把某個檔案回復成舊版本
+
+例如只回復 main.py：
+
+git restore --source=34a12d8 -- main.py
+
+確認差異：
+
+git diff
+
+確定後建立新版本：
+
+git add main.py
+git commit -m "Restore main.py from baseline version"
+git push
+
+git restore --source=<commit> 可以從指定 commit、branch 或 tag 還原檔案。
+
+也可以直接使用 tag：
+
+git restore --source=baseline-runnable -- main.py
+情況 4：取消還沒 commit 的修改
+
+取消單一檔案：
+
+git restore main.py
+
+取消所有已追蹤檔案的未提交修改：
+
+git restore .
+
+注意，執行後尚未 commit 的修改通常無法從 Git 紀錄找回。
+
+情況 5：取消已經 push 的錯誤 commit
+
+假設錯誤版本是：
+
+a8c9712
+
+使用：
+
+git revert a8c9712
+git push
+
+這不會刪掉歷史，而是建立一個新的 commit，用來反向取消該版本造成的修改，因此比直接改寫 GitHub 歷史安全。
+
+情況 6：整個本地專案回到 GitHub 上的版本
+
+假設你本地修改到很亂，而且這些修改都還沒 commit，想直接回到 GitHub 上最新的 main：
+
+git fetch origin
+git reset --hard origin/main
+
+這會刪除所有「已追蹤檔案」尚未 commit 的修改，請先執行：
+
+git status
+git diff
+
+確認真的不需要後再使用。git reset --hard 會重設目前版本與工作目錄，屬於破壞性較高的操作。
+
+九、如果你的資料夾原本不是 Git 專案
+
+在 GitHub 建立一個新的空 repository。為避免第一次 push 出現歷史衝突，建立時先不要勾選 README、License 或 .gitignore。
+
+接著執行：
+
+cd /mnt/max/你的專案資料夾
+
+git init
+git branch -M main
+
+git add .
+git commit -m "Initial working version"
+
+git remote add origin git@github.com:你的帳號/你的專案名稱.git
+git push -u origin main
+十、GitHub 登入問題
+
+如果使用 SSH：
+
+git@github.com:你的帳號/D2TCDR.git
+
+需要先設定 SSH Key。SSH 設定完成後，通常不需要每次 push 都輸入 GitHub 帳號或 token。
+
+如果使用 HTTPS：
+
+https://github.com/你的帳號/D2TCDR.git
+
+GitHub 已不支援直接使用帳號密碼進行 Git 操作；要求輸入 password 時，需要使用 Personal Access Token，或使用 Git Credential Manager、GitHub CLI。
+
+最適合你目前專題的完整流程
+
+假設你正在修改 D2TCDR：
+
+cd /mnt/max/D2TCDR
+
+# 確認目前 repository
+git status
+git remote -v
+git branch --show-current
+
+# 原作者改成 upstream
+git remote rename origin upstream
+
+# 連到你 Fork 後的 repository
+git remote add origin git@github.com:你的帳號/D2TCDR.git
+
+# 確認沒有加入 dataset、checkpoint
+git status
+
+# 保存目前可執行版本
+git add .
+git commit -m "Baseline: D2TCDR runs successfully"
+
+# 上傳
+git push -u origin "$(git branch --show-current)"
+
+# 建立重要檢查點
+git tag -a baseline-runnable -m "Runnable baseline before modification"
+git push origin baseline-runnable
+
+之後每次改完：
+
+git status
+git diff
+git add 修改的檔案
+git commit -m "清楚描述這次修改"
+git push
+
+要從穩定版本重新開始時：
+
+git switch -c new-experiment baseline-runnable
+
+這樣可以保留目前的所有結果，同時從當初成功執行的版本建立一條新的實驗分支，不容易把程式改壞後救不回來。
+
+(base) max898zero@doujiang:/mnt/max$ git add .
+fatal: not a git repository (or any parent up to mount point /)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+
+這個錯誤表示你目前所在的位置：
+
+/mnt/max
+
+不是 Git repository。你要先進入實際的程式專案資料夾，再執行 git add .。
+
+1. 查看 /mnt/max 底下有哪些專案
+cd /mnt/max
+ls
+
+假設你要上傳的是 D2TCDR，請進入：
+
+cd /mnt/max/D2TCDR
+
+確認現在的位置：
+
+pwd
+
+應該顯示：
+
+/mnt/max/D2TCDR
+
+接著檢查 Git 狀態：
+
+git status
+情況 A：git status 正常顯示
+
+例如：
+
+On branch main
+Your branch is up to date with 'origin/main'.
+
+表示這個資料夾本來就是 Git repository，可以繼續：
+
+git add .
+git status
+git commit -m "Save current working version"
+
+不過因為這可能是從原作者 GitHub clone 下來的，先檢查遠端位置：
+
+git remote -v
+
+如果顯示：
+
+origin  https://github.com/Red-Week/D2TCDR.git
+
+代表目前連到原作者的 GitHub，你通常無法直接 push。你需要先在 GitHub 上 Fork，然後修改 remote：
+
+git remote rename origin upstream
+git remote add origin https://github.com/你的GitHub帳號/D2TCDR.git
+
+確認：
+
+git remote -v
+
+正常應該類似：
+
+origin    https://github.com/你的帳號/D2TCDR.git
+upstream  https://github.com/Red-Week/D2TCDR.git
+
+最後上傳：
+
+git push -u origin "$(git branch --show-current)"
+情況 B：進入專案後仍然出現同樣錯誤
+
+例如你進入 /mnt/max/自己的專案 後，執行：
+
+git status
+
+仍然看到：
+
+fatal: not a git repository
+
+表示這個資料夾還沒有初始化 Git。請執行：
+
+cd /mnt/max/你的專案資料夾
+
+git init
+git branch -M main
+
+然後先建立 .gitignore，避免上傳資料集和模型：
+
+nano .gitignore
+
+貼入：
+
+# Python
+__pycache__/
+*.pyc
+
+# Dataset
+dataset/
+datasets/
+data/
+*.csv
+*.parquet
+
+# Model checkpoints
+checkpoint/
+checkpoints/
+ckpt/
+saved/
+*.pth
+*.pt
+*.ckpt
+
+# Training outputs
+logs/
+runs/
+wandb/
+outputs/
+
+# Environment and secrets
+.env
+venv/
+.venv/
+
+儲存後執行：
+
+git add .# Python cache
+__pycache__/
+*.py[cod]
+*.so
+
+# Environment
+.env
+.venv/
+venv/
+env/
+
+# Dataset
+dataset/
+datasets/
+data/
+
+# Model checkpoints
+checkpoint/
+checkpoints/
+ckpt/
+saved/
+*.pth
+*.pt
+*.ckpt
+
+# Training outputs
+runs/
+logs/
+wandb/
+output/
+outputs/
+
+# IDE
+.vscode/
+.idea/
+
+# Operating system
+.DS_Store
+Thumbs.db

@@ -1,0 +1,39 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*.so
+
+# Environment
+.env
+.venv/
+venv/
+env/
+
+# Dataset
+dataset/
+datasets/
+data/
+
+# Model checkpoints
+checkpoint/
+checkpoints/
+ckpt/
+saved/
+*.pth
+*.pt
+*.ckpt
+
+# Training outputs
+runs/
+logs/
+wandb/
+output/
+outputs/
+
+# IDE
+.vscode/
+.idea/
+
+# Operating system
+.DS_Store
+Thumbs.db
