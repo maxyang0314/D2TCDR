@@ -47,6 +47,8 @@ parser.add_argument('--rescale_timesteps', default=True, help='rescal timesteps'
 parser.add_argument('--eval_interval', type=int, default=5, help='the number of epoch to eval')
 parser.add_argument('--patience', type=int, default=2, help='the number of epoch to wait before early stop')
 parser.add_argument('--description', type=str, default='Diffu_norm_score', help='Model brief introduction')
+parser.add_argument('--use_tail_sampling', action='store_true', default=True, help=('Use controlled unpopular-seen target sampling ''during target-domain fine-tuning'))
+parser.add_argument('--tail_batch_ratio', type=float, default=0.5 ,help=('Ratio of unpopular-seen target samples ''in each target-domain training batch'))
 args = parser.parse_args()
 
 

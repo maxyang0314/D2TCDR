@@ -5,6 +5,7 @@ import torch
 import numpy as np
 import copy
 import time
+import pandas as pd
 
 from collections import Counter
 
@@ -217,6 +218,82 @@ def hrs_and_ndcgs_k(scores, labels, ks):
         metrics['NDCG@%d' % k] = ndcg_temp
     return metrics  
 
+def sample_popular_tail_batch(
+    popular_target_data,
+    tail_target_data,
+    batch_size,
+    tail_batch_ratio,
+    random_seed
+):
+    """
+    建立固定 Popular / Unpopular-seen target 比例的 batch。
+
+    這裡只改抽樣比例：
+    - 不修改 seq
+    - 不修改 next
+    - 不進行 context dropout
+    """
+
+    if not 0 < tail_batch_ratio < 1:
+        raise ValueError(
+            "tail_batch_ratio must be between 0 and 1, "
+            f"got {tail_batch_ratio}"
+        )
+
+    # 例如 batch_size=512、tail_batch_ratio=0.4
+    # tail 取約 205 筆，popular 取約 307 筆
+    num_tail = int(
+        round(batch_size * tail_batch_ratio)
+    )
+
+    # 至少保留 1 筆 Popular 與 1 筆 Tail
+    num_tail = min(
+        max(num_tail, 1),
+        batch_size - 1
+    )
+
+    num_popular = batch_size - num_tail
+
+    popular_batch = popular_target_data.sample(
+        n=num_popular,
+
+        # 如果資料池小於要求數量，就允許重複抽樣
+        replace=(
+            len(popular_target_data)
+            < num_popular
+        ),
+
+        random_state=random_seed
+    )
+
+    tail_batch = tail_target_data.sample(
+        n=num_tail,
+
+        # Tail pool 通常較小，可能需要重複抽樣
+        replace=(
+            len(tail_target_data)
+            < num_tail
+        ),
+
+        random_state=random_seed + 1
+    )
+
+    batch_data = pd.concat(
+        [
+            popular_batch,
+            tail_batch
+        ],
+        ignore_index=True
+    )
+
+    # 將 Popular 與 Tail 在 batch 中重新打亂
+    batch_data = batch_data.sample(
+        frac=1,
+        random_state=random_seed + 2
+    ).reset_index(drop=True)
+
+    return batch_data
+
 def model_train(train_data, val_data, test_data, con_data, model_joint, args, logger, pretrain_flag):
     epochs = args.epochs
     device = args.device
@@ -230,16 +307,237 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
     best_metrics_dict = {'Best_HR@5': 0, 'Best_NDCG@5': 0, 'Best_HR@10': 0, 'Best_NDCG@10': 0, 'Best_HR@20': 0, 'Best_NDCG@20': 0}
     best_epoch = {'Best_epoch_HR@5': 0, 'Best_epoch_NDCG@5': 0, 'Best_epoch_HR@10': 0, 'Best_epoch_NDCG@10': 0, 'Best_epoch_HR@20': 0, 'Best_epoch_NDCG@20': 0}
     bad_count = 0
-    num_rows=train_data.shape[0]
-    num_batches=int(num_rows/args.batch_size)
+
+    num_rows = train_data.shape[0]
+    num_batches = int(
+        num_rows / args.batch_size
+    )
+
+    # ==================================================
+    # 建立 Popular-target / Unpopular-seen-target pool
+    #
+    # 只在第二階段 target-domain fine-tuning 執行。
+    # 第一階段 pretrain_flag=True，不會修改。
+    # ==================================================
+    use_tail_sampling = (
+        not pretrain_flag
+        and getattr(
+            args,
+            'use_tail_sampling',
+            False
+        )
+    )
+
+    popular_target_data = None
+    tail_target_data = None
+    original_tail_target_ratio = None
+
+    if not pretrain_flag:
+        # 直接使用你目前已經寫好的三組分類函式
+        (
+            popular_items_for_sampling,
+            unpopular_seen_items_for_sampling,
+            observed_train_items_for_sampling,
+            item_counter_for_sampling
+        ) = build_item_popularity_groups(
+            train_data=train_data,
+            popular_ratio=args.popular_ratio
+        )
+
+        # 每筆 training row 依照 ground-truth next 分組
+        tail_target_mask = (
+            train_data['next']
+            .astype(int)
+            .isin(
+                unpopular_seen_items_for_sampling
+            )
+        )
+
+        tail_target_data = (
+            train_data[
+                tail_target_mask
+            ]
+            .copy()
+            .reset_index(drop=True)
+        )
+
+        popular_target_data = (
+            train_data[
+                ~tail_target_mask
+            ]
+            .copy()
+            .reset_index(drop=True)
+        )
+
+        original_tail_target_ratio = (
+            len(tail_target_data)
+            / len(train_data)
+        )
+
+        original_popular_target_ratio = (
+            len(popular_target_data)
+            / len(train_data)
+        )
+
+        sampling_definition = {
+            'training_samples': len(train_data),
+
+            'popular_items': len(
+                popular_items_for_sampling
+            ),
+
+            'unpopular_seen_items': len(
+                unpopular_seen_items_for_sampling
+            ),
+
+            'popular_target_samples': len(
+                popular_target_data
+            ),
+
+            'unpopular_seen_target_samples': len(
+                tail_target_data
+            ),
+
+            'original_popular_target_ratio': round(
+                original_popular_target_ratio,
+                4
+            ),
+
+            'original_unpopular_seen_target_ratio': round(
+                original_tail_target_ratio,
+                4
+            ),
+
+            'use_tail_sampling': (
+                use_tail_sampling
+            ),
+
+            'requested_tail_batch_ratio': (
+                args.tail_batch_ratio
+                if use_tail_sampling
+                else None
+            )
+        }
+
+        print(
+            'Training Target Distribution'
+            '-----------------------------------------'
+        )
+        print(sampling_definition)
+
+        logger.info(
+            'Training Target Distribution'
+            '-----------------------------------------'
+        )
+        logger.info(sampling_definition)
+
+        if len(popular_target_data) == 0:
+            raise ValueError(
+                'No Popular-target training samples found.'
+            )
+
+        if len(tail_target_data) == 0:
+            raise ValueError(
+                'No Unpopular-seen-target training samples found.'
+            )
+
+        # ==============================================
+        # 安全檢查：
+        # 設定比例不能低於原始 Tail-target 比例，
+        # 否則會反而減少 Tail、增加 Popular。
+        # ==============================================
+        if use_tail_sampling:
+            if not 0 < args.tail_batch_ratio < 1:
+                raise ValueError(
+                    'tail_batch_ratio must be between 0 and 1.'
+                )
+
+            if (
+                args.tail_batch_ratio
+                <= original_tail_target_ratio
+            ):
+                raise ValueError(
+                    'The requested tail_batch_ratio does not '
+                    'increase Tail supervision.\n'
+                    f'Original Tail-target ratio: '
+                    f'{original_tail_target_ratio:.4f}\n'
+                    f'Requested Tail batch ratio: '
+                    f'{args.tail_batch_ratio:.4f}\n'
+                    'Please choose a value larger than the '
+                    'original Tail-target ratio.'
+                )
+
+            controlled_sampling_info = {
+                'original_tail_target_ratio': round(
+                    original_tail_target_ratio,
+                    4
+                ),
+
+                'new_tail_batch_ratio': (
+                    args.tail_batch_ratio
+                ),
+
+                'original_popular_target_ratio': round(
+                    original_popular_target_ratio,
+                    4
+                ),
+
+                'new_popular_batch_ratio': round(
+                    1 - args.tail_batch_ratio,
+                    4
+                )
+            }
+
+            print(
+                'Controlled Batch Sampling'
+                '-----------------------------------------'
+            )
+            print(controlled_sampling_info)
+
+            logger.info(
+                'Controlled Batch Sampling'
+                '-----------------------------------------'
+            )
+            logger.info(controlled_sampling_info)
+
     for epoch_temp in range(epochs):
 
         model_joint.train()
         flag_update = 0
         for j in range(num_batches):
-            batch = train_data.sample(n=args.batch_size).to_dict()
+            if use_tail_sampling:
+                # 每個 epoch、batch 使用不同 seed
+                batch_seed = (
+                    args.random_seed
+                    + epoch_temp * num_batches
+                    + j
+                )
+
+                batch_df = sample_popular_tail_batch(
+                    popular_target_data=(
+                        popular_target_data
+                    ),
+
+                    tail_target_data=(
+                        tail_target_data
+                    ),
+
+                    batch_size=args.batch_size,
+
+                    tail_batch_ratio=(
+                        args.tail_batch_ratio
+                    ),
+
+                    random_seed=batch_seed
+                )
+
+            else:
+                # 原版抽樣方式
+                batch_df = train_data.sample(n=args.batch_size)
+                
+            batch = batch_df.to_dict()
             seq = list(batch['seq'].values())
-            target=list(batch['next'].values())
+            target = list(batch['next'].values())
             optimizer.zero_grad()
             seq = torch.LongTensor(seq)
             target = (torch.LongTensor(target)).unsqueeze(1)
