@@ -5,6 +5,7 @@ import torch
 import numpy as np
 import copy
 import time
+import random
 
 from collections import Counter
 
@@ -217,6 +218,192 @@ def hrs_and_ndcgs_k(scores, labels, ks):
         metrics['NDCG@%d' % k] = ndcg_temp
     return metrics  
 
+def pad_or_truncate_sequence(seq, max_len):
+    """
+    移除 padding 0，保留最近 max_len 個 item，
+    最後從左側重新補 0。
+    """
+    real_items = [
+        int(item)
+        for item in seq
+        if int(item) != 0
+    ]
+
+    real_items = real_items[-max_len:]
+
+    return (
+        [0] * (max_len - len(real_items))
+        + real_items
+    )
+
+def augment_tail_sequence(
+    seq,
+    max_len,
+    drop_probability,
+    preserve_recent,
+    rng
+):
+    """
+    對 Unpopular-seen target 的歷史 sequence
+    做 context dropout。
+
+    規則：
+    1. 只刪除較早的歷史 item
+    2. 最近 preserve_recent 個 item 固定保留
+    3. 不打亂 item 順序
+    4. 不修改 ground-truth next
+    """
+    if not 0 <= drop_probability <= 1:
+        raise ValueError(
+            'tail_drop_probability must be between 0 and 1.'
+        )
+
+    if preserve_recent < 1:
+        raise ValueError(
+            'tail_preserve_recent must be at least 1.'
+        )
+
+    real_items = [
+        int(item)
+        for item in seq
+        if int(item) != 0
+    ]
+
+    # 序列太短，沒有較早 item 可以刪除
+    if len(real_items) <= preserve_recent:
+        return pad_or_truncate_sequence(
+            real_items,
+            max_len
+        )
+
+    older_items = real_items[:-preserve_recent]
+    recent_items = real_items[-preserve_recent:]
+
+    # 只對較舊的 item 做 dropout
+    kept_older_items = [
+        item
+        for item in older_items
+        if rng.random() >= drop_probability
+    ]
+
+    augmented_items = (
+        kept_older_items
+        + recent_items
+    )
+
+    return pad_or_truncate_sequence(
+        augmented_items,
+        max_len
+    )
+
+def augment_unpopular_seen_batch(
+    batch_df,
+    unpopular_seen_items,
+    max_len,
+    augmentation_probability,
+    drop_probability,
+    preserve_recent,
+    random_seed
+):
+    """
+    只修改目前 batch 中，
+    next 屬於 Unpopular-seen 的 sequence。
+
+    不增加 row、不刪除 row、不修改 next，
+    因此 batch 中 Popular/Tail 的比例不變。
+    """
+    if not 0 <= augmentation_probability <= 1:
+        raise ValueError(
+            'tail_aug_probability must be between 0 and 1.'
+        )
+
+    batch_df = (
+        batch_df
+        .copy()
+        .reset_index(drop=True)
+    )
+
+    rng = random.Random(random_seed)
+
+    tail_samples_in_batch = 0
+    augmented_tail_samples = 0
+    dropped_item_count = 0
+
+    for row_index in batch_df.index:
+        target_item = int(
+            batch_df.at[row_index, 'next']
+        )
+
+        # next 不是 Unpopular-seen，不修改
+        if target_item not in unpopular_seen_items:
+            continue
+
+        tail_samples_in_batch += 1
+
+        # 只有部分 Tail row 進行 augmentation
+        if rng.random() >= augmentation_probability:
+            continue
+
+        original_seq = list(
+            batch_df.at[row_index, 'seq']
+        )
+
+        original_real_length = sum(
+            int(item) != 0
+            for item in original_seq
+        )
+
+        augmented_seq = augment_tail_sequence(
+            seq=original_seq,
+            max_len=max_len,
+            drop_probability=drop_probability,
+            preserve_recent=preserve_recent,
+            rng=rng
+        )
+
+        augmented_real_length = sum(
+            int(item) != 0
+            for item in augmented_seq
+        )
+
+        batch_df.at[
+            row_index,
+            'seq'
+        ] = augmented_seq
+
+        if 'len_seq' in batch_df.columns:
+            batch_df.at[
+                row_index,
+                'len_seq'
+            ] = augmented_real_length
+
+        augmented_tail_samples += 1
+
+        dropped_item_count += max(
+            0,
+            original_real_length
+            - augmented_real_length
+        )
+
+    stats = {
+        'batch_size': len(batch_df),
+        'tail_samples_in_batch': (
+            tail_samples_in_batch
+        ),
+        'augmented_tail_samples': (
+            augmented_tail_samples
+        ),
+        'tail_ratio_in_batch': round(
+            tail_samples_in_batch / len(batch_df),
+            4
+        )
+        if len(batch_df) > 0
+        else 0.0,
+        'dropped_items': dropped_item_count
+    }
+
+    return batch_df, stats
+
 def model_train(train_data, val_data, test_data, con_data, model_joint, args, logger, pretrain_flag):
     epochs = args.epochs
     device = args.device
@@ -232,14 +419,113 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
     bad_count = 0
     num_rows=train_data.shape[0]
     num_batches=int(num_rows/args.batch_size)
+    unpopular_seen_items_for_augmentation = None
+
+    # 只在 target-domain fine-tuning 階段建立
+    # Unpopular-seen item 集合
+    if not pretrain_flag:
+        (
+            popular_items_for_augmentation,
+            unpopular_seen_items_for_augmentation,
+            observed_train_items_for_augmentation,
+            item_counter_for_augmentation
+        ) = build_item_popularity_groups(
+            train_data=train_data,
+            popular_ratio=args.popular_ratio
+        )
+
+        augmentation_setup = {
+            'use_tail_sequence_augmentation': True,
+            'popular_items': len(
+                popular_items_for_augmentation
+            ),
+            'unpopular_seen_items': len(
+                unpopular_seen_items_for_augmentation
+            ),
+            'tail_aug_probability': (
+                args.tail_aug_probability
+            ),
+            'tail_drop_probability': (
+                args.tail_drop_probability
+            ),
+            'tail_preserve_recent': (
+                args.tail_preserve_recent
+            )
+        }
+
+        print(
+            'Tail Sequence Augmentation Setup'
+            '------------------------------------------'
+        )
+        print(augmentation_setup)
+
+        logger.info(
+            'Tail Sequence Augmentation Setup'
+            '------------------------------------------'
+        )
+        logger.info(augmentation_setup)
+
     for epoch_temp in range(epochs):
 
         model_joint.train()
         flag_update = 0
         for j in range(num_batches):
-            batch = train_data.sample(n=args.batch_size).to_dict()
-            seq = list(batch['seq'].values())
-            target=list(batch['next'].values())
+            batch_df = train_data.sample(
+                n=args.batch_size
+            ).copy()
+
+            augmentation_stats = None
+
+            # 只在 target-domain fine-tuning 階段執行
+            if not pretrain_flag:
+                augmentation_seed = (
+                    args.random_seed
+                    + epoch_temp * num_batches
+                    + j
+                    + 100000
+                )
+
+                (
+                    batch_df,
+                    augmentation_stats
+                ) = augment_unpopular_seen_batch(
+                    batch_df=batch_df,
+                    unpopular_seen_items=(
+                        unpopular_seen_items_for_augmentation
+                    ),
+                    max_len=args.max_len,
+                    augmentation_probability=(
+                        args.tail_aug_probability
+                    ),
+                    drop_probability=(
+                        args.tail_drop_probability
+                    ),
+                    preserve_recent=(
+                        args.tail_preserve_recent
+                    ),
+                    random_seed=augmentation_seed
+                )
+
+            # 暫時印出第一個 epoch 的前三個 batch
+            if (
+                not pretrain_flag
+                and epoch_temp == 0
+                and j < 3
+            ):
+                print(
+                    'Tail Augmentation Batch Check',
+                    augmentation_stats
+                )
+
+            batch = batch_df.to_dict()
+
+            seq = list(
+                batch['seq'].values()
+            )
+
+            target = list(
+                batch['next'].values()
+            )
             optimizer.zero_grad()
             seq = torch.LongTensor(seq)
             target = (torch.LongTensor(target)).unsqueeze(1)

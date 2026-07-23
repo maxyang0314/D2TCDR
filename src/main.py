@@ -47,6 +47,9 @@ parser.add_argument('--rescale_timesteps', default=True, help='rescal timesteps'
 parser.add_argument('--eval_interval', type=int, default=5, help='the number of epoch to eval')
 parser.add_argument('--patience', type=int, default=2, help='the number of epoch to wait before early stop')
 parser.add_argument('--description', type=str, default='Diffu_norm_score', help='Model brief introduction')
+parser.add_argument('--tail_aug_probability', type=float, default=0.5, help=('Probability of augmenting an ''Unpopular-seen target sequence'))
+parser.add_argument('--tail_drop_probability', type=float, default=0.2,help=('Probability of dropping each older item ''from an augmented sequence'))
+parser.add_argument('--tail_preserve_recent', type=int, default=2, help=('Number of recent sequence items preserved ''during augmentation'))
 args = parser.parse_args()
 
 
