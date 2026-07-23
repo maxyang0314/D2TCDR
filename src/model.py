@@ -147,8 +147,8 @@ class Att_Diffuse_model(nn.Module):
             item_embeddings = self.souce_embeddings(sequence)
             item_embeddings = item_embeddings + position_embeddings
             item_shared_embeddings = self.shared_layer(item_embeddings)
-            item_embeddings = item_shared_embeddings
             item_specific_embeddings = item_embeddings - item_shared_embeddings
+            item_embeddings = item_shared_embeddings
             
             if train_flag:
                 
