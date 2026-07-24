@@ -49,6 +49,9 @@ parser.add_argument('--patience', type=int, default=2, help='the number of epoch
 parser.add_argument('--description', type=str, default='Diffu_norm_score', help='Model brief introduction')
 parser.add_argument('--use_tail_sampling', action='store_true', default=True, help=('Use controlled unpopular-seen target sampling ''during target-domain fine-tuning'))
 parser.add_argument('--tail_batch_ratio', type=float, default=0.5 ,help=('Ratio of unpopular-seen target samples ''in each target-domain training batch'))
+parser.add_argument('--tail_aug_probability', type=float, default=0.25, help=('Probability of augmenting each ''Unpopular-seen target sequence'))
+parser.add_argument('--tail_drop_probability', type=float, default=0.2, help=( 'Probability of dropping each older item ' 'from an augmented Tail sequence'))
+parser.add_argument('--tail_preserve_recent', type=int, default=2, help=('Number of recent sequence items that ' 'must be preserved during augmentation'))
 args = parser.parse_args()
 
 

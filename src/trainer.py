@@ -6,6 +6,7 @@ import numpy as np
 import copy
 import time
 import pandas as pd
+import random
 
 from collections import Counter
 
@@ -294,6 +295,202 @@ def sample_popular_tail_batch(
 
     return batch_data
 
+def pad_or_truncate_sequence(seq, max_len):
+    """
+    移除 padding 0，保留最近 max_len 個 item，
+    再從左側補 0，讓 sequence 長度固定。
+    """
+    real_items = [
+        int(item)
+        for item in seq
+        if int(item) != 0
+    ]
+
+    real_items = real_items[-max_len:]
+
+    padded_sequence = (
+        [0] * (max_len - len(real_items))
+        + real_items
+    )
+
+    return padded_sequence
+
+def augment_tail_sequence(
+    seq,
+    max_len,
+    drop_probability,
+    preserve_recent,
+    rng
+):
+    """
+    對一筆 Unpopular-seen target 的歷史 sequence
+    進行 context dropout。
+
+    只刪除較舊的 item；
+    最近 preserve_recent 個 item 一定保留。
+    """
+    if not 0 <= drop_probability <= 1:
+        raise ValueError(
+            'tail_drop_probability must be between 0 and 1.'
+        )
+
+    if preserve_recent < 1:
+        raise ValueError(
+            'tail_preserve_recent must be at least 1.'
+        )
+
+    real_items = [
+        int(item)
+        for item in seq
+        if int(item) != 0
+    ]
+
+    # sequence 太短，沒有舊 item 可以刪除
+    if len(real_items) <= preserve_recent:
+        return pad_or_truncate_sequence(
+            real_items,
+            max_len
+        )
+
+    older_items = real_items[:-preserve_recent]
+    recent_items = real_items[-preserve_recent:]
+
+    # 只對較舊的歷史 item 做 dropout
+    kept_older_items = [
+        item
+        for item in older_items
+        if rng.random() >= drop_probability
+    ]
+
+    augmented_items = (
+        kept_older_items
+        + recent_items
+    )
+
+    return pad_or_truncate_sequence(
+        augmented_items,
+        max_len
+    )
+
+def augment_unpopular_seen_batch(
+    batch_df,
+    unpopular_seen_items,
+    max_len,
+    augmentation_probability,
+    drop_probability,
+    preserve_recent,
+    random_seed
+):
+    """
+    對目前 batch 中 next 屬於 Unpopular-seen 的 row，
+    進行 sequence augmentation。
+
+    不新增 row。
+    不刪除 row。
+    不修改 next。
+    """
+    if not 0 <= augmentation_probability <= 1:
+        raise ValueError(
+            'tail_aug_probability must be between 0 and 1.'
+        )
+
+    batch_df = (
+        batch_df
+        .copy()
+        .reset_index(drop=True)
+    )
+
+    rng = random.Random(random_seed)
+
+    tail_samples_in_batch = 0
+    selected_for_augmentation = 0
+    changed_sequences = 0
+    dropped_items = 0
+
+    for row_index in batch_df.index:
+        target_item = int(
+            batch_df.at[row_index, 'next']
+        )
+
+        # 只處理 next 是 Unpopular-seen 的樣本
+        if target_item not in unpopular_seen_items:
+            continue
+
+        tail_samples_in_batch += 1
+
+        # 只有部分 Tail sequence 進行 augmentation
+        if rng.random() >= augmentation_probability:
+            continue
+
+        selected_for_augmentation += 1
+
+        original_seq = [
+            int(item)
+            for item in batch_df.at[row_index, 'seq']
+        ]
+
+        original_length = sum(
+            item != 0
+            for item in original_seq
+        )
+
+        augmented_seq = augment_tail_sequence(
+            seq=original_seq,
+            max_len=max_len,
+            drop_probability=drop_probability,
+            preserve_recent=preserve_recent,
+            rng=rng
+        )
+
+        augmented_length = sum(
+            item != 0
+            for item in augmented_seq
+        )
+
+        if augmented_seq != original_seq:
+            changed_sequences += 1
+
+        dropped_items += max(
+            0,
+            original_length - augmented_length
+        )
+
+        batch_df.at[
+            row_index,
+            'seq'
+        ] = augmented_seq
+
+        # 若資料包含 len_seq，就同步更新
+        if 'len_seq' in batch_df.columns:
+            batch_df.at[
+                row_index,
+                'len_seq'
+            ] = augmented_length
+
+    stats = {
+        'batch_size': len(batch_df),
+        'tail_samples_in_batch': (
+            tail_samples_in_batch
+        ),
+        'selected_for_augmentation': (
+            selected_for_augmentation
+        ),
+        'changed_sequences': (
+            changed_sequences
+        ),
+        'dropped_items': (
+            dropped_items
+        ),
+        'tail_ratio_in_batch': round(
+            tail_samples_in_batch / len(batch_df),
+            4
+        )
+        if len(batch_df) > 0
+        else 0.0
+    }
+
+    return batch_df, stats
+
 def model_train(train_data, val_data, test_data, con_data, model_joint, args, logger, pretrain_flag):
     epochs = args.epochs
     device = args.device
@@ -500,13 +697,40 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
             )
             logger.info(controlled_sampling_info)
 
+        augmentation_setup = {
+            'use_tail_sequence_augmentation': True,
+            'tail_aug_probability': (
+                args.tail_aug_probability
+            ),
+            'tail_drop_probability': (
+                args.tail_drop_probability
+            ),
+            'tail_preserve_recent': (
+                args.tail_preserve_recent
+            )
+        }
+
+        print(
+            'Tail Sequence Augmentation Setup'
+            '-----------------------------------------'
+        )
+        print(augmentation_setup)
+
+        logger.info(
+            'Tail Sequence Augmentation Setup'
+            '-----------------------------------------'
+        )
+        logger.info(augmentation_setup)
+
     for epoch_temp in range(epochs):
 
         model_joint.train()
         flag_update = 0
         for j in range(num_batches):
+            # ==========================================
+            # 1. 先執行 experiment-1 的 Tail sampling
+            # ==========================================
             if use_tail_sampling:
-                # 每個 epoch、batch 使用不同 seed
                 batch_seed = (
                     args.random_seed
                     + epoch_temp * num_batches
@@ -517,27 +741,79 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                     popular_target_data=(
                         popular_target_data
                     ),
-
                     tail_target_data=(
                         tail_target_data
                     ),
-
                     batch_size=args.batch_size,
-
                     tail_batch_ratio=(
                         args.tail_batch_ratio
                     ),
-
                     random_seed=batch_seed
                 )
 
             else:
-                # 原版抽樣方式
-                batch_df = train_data.sample(n=args.batch_size)
-                
+                batch_df = train_data.sample(
+                    n=args.batch_size
+                )
+
+            # ==========================================
+            # 2. 再對 batch 中的 Tail sequence
+            #    執行 experiment-2 augmentation
+            # ==========================================
+            augmentation_stats = None
+
+            if not pretrain_flag:
+                augmentation_seed = (
+                    args.random_seed
+                    + 100000
+                    + epoch_temp * num_batches
+                    + j
+                )
+
+                (
+                    batch_df,
+                    augmentation_stats
+                ) = augment_unpopular_seen_batch(
+                    batch_df=batch_df,
+                    unpopular_seen_items=(
+                        unpopular_seen_items_for_sampling
+                    ),
+                    max_len=args.max_len,
+                    augmentation_probability=(
+                        args.tail_aug_probability
+                    ),
+                    drop_probability=(
+                        args.tail_drop_probability
+                    ),
+                    preserve_recent=(
+                        args.tail_preserve_recent
+                    ),
+                    random_seed=augmentation_seed
+                )
+
+            # 暫時顯示第一個 epoch 的前三個 batch
+            if (
+                not pretrain_flag
+                and epoch_temp == 0
+                and j < 3
+            ):
+                print(
+                    'Tail Augmentation Batch Check',
+                    augmentation_stats
+                )
+
+            # ==========================================
+            # 3. 最後才轉成 model input
+            # ==========================================
             batch = batch_df.to_dict()
-            seq = list(batch['seq'].values())
-            target = list(batch['next'].values())
+
+            seq = list(
+                batch['seq'].values()
+            )
+
+            target = list(
+                batch['next'].values()
+            )
             optimizer.zero_grad()
             seq = torch.LongTensor(seq)
             target = (torch.LongTensor(target)).unsqueeze(1)
