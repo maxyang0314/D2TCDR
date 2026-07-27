@@ -6,6 +6,7 @@ import numpy as np
 import copy
 import time
 import random
+import pandas as pd
 
 from collections import Counter
 
@@ -280,11 +281,25 @@ def augment_tail_sequence(
     recent_items = real_items[-preserve_recent:]
 
     # 只對較舊的 item 做 dropout
-    kept_older_items = [
-        item
-        for item in older_items
-        if rng.random() >= drop_probability
-    ]
+    kept_older_items = []
+    dropped_any_item = False
+
+    for item in older_items:
+        if rng.random() < drop_probability:
+            dropped_any_item = True
+        else:
+            kept_older_items.append(item)
+
+    # 若這次剛好一個都沒刪，強制隨機刪除一個較舊 item
+    if not dropped_any_item and len(older_items) > 0:
+        drop_index = rng.randrange(
+            len(older_items)
+        )
+
+        kept_older_items = (
+            older_items[:drop_index]
+            + older_items[drop_index + 1:]
+        )
 
     augmented_items = (
         kept_older_items
@@ -296,61 +311,56 @@ def augment_tail_sequence(
         max_len
     )
 
-def augment_unpopular_seen_batch(
-    batch_df,
+def build_doubled_unpopular_seen_train_data(
+    train_data,
     unpopular_seen_items,
     max_len,
-    augmentation_probability,
     drop_probability,
     preserve_recent,
     random_seed
 ):
     """
-    只修改目前 batch 中，
-    next 屬於 Unpopular-seen 的 sequence。
+    保留所有原始 training rows。
 
-    不增加 row、不刪除 row、不修改 next，
-    因此 batch 中 Popular/Tail 的比例不變。
+    對每一筆 next 屬於 Unpopular-seen 的資料，
+    額外產生一筆 context-dropout copy。
+
+    Popular：
+        只保留原始資料。
+
+    Unpopular-seen：
+        一筆原始資料 + 一筆 augmented 資料。
     """
-    if not 0 <= augmentation_probability <= 1:
-        raise ValueError(
-            'tail_aug_probability must be between 0 and 1.'
-        )
-
-    batch_df = (
-        batch_df
+    original_data = (
+        train_data
         .copy()
         .reset_index(drop=True)
     )
 
+    # 用來辨認原始資料與 augmented copy
+    original_data['is_augmented'] = 0
+
     rng = random.Random(random_seed)
 
-    tail_samples_in_batch = 0
-    augmented_tail_samples = 0
-    dropped_item_count = 0
+    augmented_rows = []
+    unchanged_augmented_count = 0
 
-    for row_index in batch_df.index:
-        target_item = int(
-            batch_df.at[row_index, 'next']
-        )
+    for _, row in original_data.iterrows():
+        target_item = int(row['next'])
 
-        # next 不是 Unpopular-seen，不修改
+        # 只對 Unpopular-seen target 新增 copy
         if target_item not in unpopular_seen_items:
             continue
 
-        tail_samples_in_batch += 1
+        augmented_row = row.copy()
 
-        # 只有部分 Tail row 進行 augmentation
-        if rng.random() >= augmentation_probability:
-            continue
+        original_seq = list(row['seq'])
 
-        original_seq = list(
-            batch_df.at[row_index, 'seq']
-        )
-
-        original_real_length = sum(
-            int(item) != 0
-            for item in original_seq
+        normalized_original_seq = (
+            pad_or_truncate_sequence(
+                original_seq,
+                max_len
+            )
         )
 
         augmented_seq = augment_tail_sequence(
@@ -361,48 +371,96 @@ def augment_unpopular_seen_batch(
             rng=rng
         )
 
-        augmented_real_length = sum(
-            int(item) != 0
-            for item in augmented_seq
+        if augmented_seq == normalized_original_seq:
+            unchanged_augmented_count += 1
+
+        # 只修改 sequence
+        augmented_row['seq'] = augmented_seq
+
+        # ground-truth next 維持原樣
+        augmented_row['next'] = target_item
+
+        if 'len_seq' in original_data.columns:
+            augmented_row['len_seq'] = sum(
+                int(item) != 0
+                for item in augmented_seq
+            )
+
+        augmented_row['is_augmented'] = 1
+
+        augmented_rows.append(
+            augmented_row
         )
 
-        batch_df.at[
-            row_index,
-            'seq'
-        ] = augmented_seq
+    augmented_data = pd.DataFrame(
+        augmented_rows,
+        columns=original_data.columns
+    )
 
-        if 'len_seq' in batch_df.columns:
-            batch_df.at[
-                row_index,
-                'len_seq'
-            ] = augmented_real_length
+    doubled_train_data = pd.concat(
+        [
+            original_data,
+            augmented_data
+        ],
+        ignore_index=True
+    )
 
-        augmented_tail_samples += 1
-
-        dropped_item_count += max(
-            0,
-            original_real_length
-            - augmented_real_length
+    # 打亂原始與 augmented rows
+    doubled_train_data = (
+        doubled_train_data
+        .sample(
+            frac=1,
+            random_state=random_seed
         )
+        .reset_index(drop=True)
+    )
+
+    original_tail_count = (
+        original_data['next']
+        .astype(int)
+        .isin(unpopular_seen_items)
+        .sum()
+    )
+
+    final_tail_count = (
+        doubled_train_data['next']
+        .astype(int)
+        .isin(unpopular_seen_items)
+        .sum()
+    )
 
     stats = {
-        'batch_size': len(batch_df),
-        'tail_samples_in_batch': (
-            tail_samples_in_batch
+        'original_training_samples': (
+            len(original_data)
         ),
-        'augmented_tail_samples': (
-            augmented_tail_samples
+        'original_tail_samples': int(
+            original_tail_count
         ),
-        'tail_ratio_in_batch': round(
-            tail_samples_in_batch / len(batch_df),
+        'augmented_tail_copies': (
+            len(augmented_data)
+        ),
+        'final_training_samples': (
+            len(doubled_train_data)
+        ),
+        'final_tail_samples': int(
+            final_tail_count
+        ),
+        'original_tail_ratio': round(
+            original_tail_count
+            / len(original_data),
             4
+        ),
+        'final_tail_ratio': round(
+            final_tail_count
+            / len(doubled_train_data),
+            4
+        ),
+        'unchanged_augmented_sequences': (
+            unchanged_augmented_count
         )
-        if len(batch_df) > 0
-        else 0.0,
-        'dropped_items': dropped_item_count
     }
 
-    return batch_df, stats
+    return doubled_train_data, stats
 
 def model_train(train_data, val_data, test_data, con_data, model_joint, args, logger, pretrain_flag):
     epochs = args.epochs
@@ -417,12 +475,13 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
     best_metrics_dict = {'Best_HR@5': 0, 'Best_NDCG@5': 0, 'Best_HR@10': 0, 'Best_NDCG@10': 0, 'Best_HR@20': 0, 'Best_NDCG@20': 0}
     best_epoch = {'Best_epoch_HR@5': 0, 'Best_epoch_NDCG@5': 0, 'Best_epoch_HR@10': 0, 'Best_epoch_NDCG@10': 0, 'Best_epoch_HR@20': 0, 'Best_epoch_NDCG@20': 0}
     bad_count = 0
-    num_rows=train_data.shape[0]
-    num_batches=int(num_rows/args.batch_size)
+
+    # 預設第一階段仍使用原始資料
+    training_data_for_sampling = train_data
+
     unpopular_seen_items_for_augmentation = None
 
-    # 只在 target-domain fine-tuning 階段建立
-    # Unpopular-seen item 集合
+    # 只在 target-domain fine-tuning 建立 augmented dataset
     if not pretrain_flag:
         (
             popular_items_for_augmentation,
@@ -434,77 +493,134 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
             popular_ratio=args.popular_ratio
         )
 
+        (
+            training_data_for_sampling,
+            augmentation_stats
+        ) = build_doubled_unpopular_seen_train_data(
+            train_data=train_data,
+            unpopular_seen_items=(
+                unpopular_seen_items_for_augmentation
+            ),
+            max_len=args.max_len,
+            drop_probability=(
+                args.tail_drop_probability
+            ),
+            preserve_recent=(
+                args.tail_preserve_recent
+            ),
+            random_seed=args.random_seed
+        )
+
         augmentation_setup = {
-            'use_tail_sequence_augmentation': True,
+            'augmentation_method': (
+                'one original plus one augmented copy'
+            ),
             'popular_items': len(
                 popular_items_for_augmentation
             ),
             'unpopular_seen_items': len(
                 unpopular_seen_items_for_augmentation
             ),
-            'tail_aug_probability': (
-                args.tail_aug_probability
-            ),
             'tail_drop_probability': (
                 args.tail_drop_probability
             ),
             'tail_preserve_recent': (
                 args.tail_preserve_recent
-            )
+            ),
+            **augmentation_stats
         }
 
         print(
-            'Tail Sequence Augmentation Setup'
+            'Tail Dataset Augmentation Setup'
             '------------------------------------------'
         )
         print(augmentation_setup)
 
         logger.info(
-            'Tail Sequence Augmentation Setup'
+            'Tail Dataset Augmentation Setup'
             '------------------------------------------'
         )
         logger.info(augmentation_setup)
+
+    # 必須在 augmented dataset 建立後再計算
+    num_rows = training_data_for_sampling.shape[0]
+
+    num_batches = int(
+        num_rows / args.batch_size
+    )
 
     for epoch_temp in range(epochs):
 
         model_joint.train()
         flag_update = 0
         for j in range(num_batches):
-            batch_df = train_data.sample(
-                n=args.batch_size
-            ).copy()
+            batch_seed = (
+                args.random_seed
+                + epoch_temp * num_batches
+                + j
+            )
 
-            augmentation_stats = None
-
-            # 只在 target-domain fine-tuning 階段執行
-            if not pretrain_flag:
-                augmentation_seed = (
-                    args.random_seed
-                    + epoch_temp * num_batches
-                    + j
-                    + 100000
+            batch_df = (
+                training_data_for_sampling
+                .sample(
+                    n=args.batch_size,
+                    random_state=batch_seed
                 )
+                .copy()
+            )
 
-                (
-                    batch_df,
-                    augmentation_stats
-                ) = augment_unpopular_seen_batch(
-                    batch_df=batch_df,
-                    unpopular_seen_items=(
+            if (
+                not pretrain_flag
+                and epoch_temp == 0
+                and j < 3
+            ):
+                batch_tail_count = (
+                    batch_df['next']
+                    .astype(int)
+                    .isin(
                         unpopular_seen_items_for_augmentation
-                    ),
-                    max_len=args.max_len,
-                    augmentation_probability=(
-                        args.tail_aug_probability
-                    ),
-                    drop_probability=(
-                        args.tail_drop_probability
-                    ),
-                    preserve_recent=(
-                        args.tail_preserve_recent
-                    ),
-                    random_seed=augmentation_seed
+                    )
+                    .sum()
                 )
+
+                batch_augmented_count = (
+                    batch_df['is_augmented']
+                    .sum()
+                )
+
+                batch_check = {
+                    'batch_size': len(batch_df),
+                    'tail_samples': int(
+                        batch_tail_count
+                    ),
+                    'augmented_samples': int(
+                        batch_augmented_count
+                    ),
+                    'tail_ratio': round(
+                        batch_tail_count
+                        / len(batch_df),
+                        4
+                    ),
+                    'augmented_ratio': round(
+                        batch_augmented_count
+                        / len(batch_df),
+                        4
+                    )
+                }
+
+                print(
+                    'Tail Dataset Batch Check',
+                    batch_check
+                )
+            batch = batch_df.to_dict()
+
+            seq = list(
+                batch['seq'].values()
+            )
+
+            target = list(
+                batch['next'].values()
+            )
 
             # 暫時印出第一個 epoch 的前三個 batch
             if (
