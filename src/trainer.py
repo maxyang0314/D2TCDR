@@ -476,13 +476,124 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
     best_epoch = {'Best_epoch_HR@5': 0, 'Best_epoch_NDCG@5': 0, 'Best_epoch_HR@10': 0, 'Best_epoch_NDCG@10': 0, 'Best_epoch_HR@20': 0, 'Best_epoch_NDCG@20': 0}
     bad_count = 0
 
-    # 預設第一階段仍使用原始資料
+    # =========================================================
+    # Source/Target recommendation training data
+    #
+    # 第一階段：
+    #   train_data 是 source-domain training data
+    #
+    # 第二階段：
+    #   train_data 是 target-domain training data
+    # =========================================================
     training_data_for_sampling = train_data
 
-    unpopular_seen_items_for_augmentation = None
+    # =========================================================
+    # 第一階段使用的 Target condition data
+    #
+    # pretrain_flag=True 時：
+    #   con_data 是原始 target-domain training data
+    # =========================================================
+    condition_data_for_sampling = con_data
 
-    # 只在 target-domain fine-tuning 建立 augmented dataset
-    if not pretrain_flag:
+    # 第二階段使用的變數
+    unpopular_seen_items_for_augmentation = None
+    augmentation_stats = None
+
+    # 第一階段 Target condition augmentation 使用的變數
+    condition_popular_items = None
+    condition_unpopular_seen_items = None
+    condition_augmentation_stats = None
+
+
+    # =========================================================
+    # 第一階段：
+    # 建立 augmented Target condition dataset
+    # =========================================================
+    if pretrain_flag:
+
+        if con_data is None:
+            raise ValueError(
+                'con_data cannot be None during source pretraining.'
+            )
+
+        # Popularity 必須由原始 Target training data 定義
+        (
+            condition_popular_items,
+            condition_unpopular_seen_items,
+            condition_observed_items,
+            condition_item_counter
+        ) = build_item_popularity_groups(
+            train_data=con_data,
+            popular_ratio=args.popular_ratio
+        )
+
+        # 保留全部原始 Target rows，
+        # 並為每筆 Unpopular-seen-target row
+        # 額外建立一筆 context-dropout copy
+        (
+            condition_data_for_sampling,
+            condition_augmentation_stats
+        ) = build_doubled_unpopular_seen_train_data(
+            train_data=con_data,
+            unpopular_seen_items=(
+                condition_unpopular_seen_items
+            ),
+            max_len=args.max_len,
+            drop_probability=(
+                args.tail_drop_probability
+            ),
+            preserve_recent=(
+                args.tail_preserve_recent
+            ),
+            random_seed=(
+                args.random_seed + 200000
+            )
+        )
+
+        condition_setup = {
+            'training_stage': (
+                'source-domain pretraining'
+            ),
+            'augmentation_target': (
+                'target-domain condition data'
+            ),
+            'augmentation_method': (
+                'one original plus one augmented copy'
+            ),
+            'popular_items': len(
+                condition_popular_items
+            ),
+            'unpopular_seen_items': len(
+                condition_unpopular_seen_items
+            ),
+            'tail_drop_probability': (
+                args.tail_drop_probability
+            ),
+            'tail_preserve_recent': (
+                args.tail_preserve_recent
+            ),
+            **condition_augmentation_stats
+        }
+
+        print(
+            'First-Stage Target Condition Augmentation Setup'
+            '------------------------------------------'
+        )
+        print(condition_setup)
+
+        logger.info(
+            'First-Stage Target Condition Augmentation Setup'
+            '------------------------------------------'
+        )
+        logger.info(condition_setup)
+
+
+    # =========================================================
+    # 第二階段：
+    # 保留你目前 experiment-2.1 的 Target dataset augmentation
+    # =========================================================
+    else:
+
         (
             popular_items_for_augmentation,
             unpopular_seen_items_for_augmentation,
@@ -512,6 +623,9 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
         )
 
         augmentation_setup = {
+            'training_stage': (
+                'target-domain fine-tuning'
+            ),
             'augmentation_method': (
                 'one original plus one augmented copy'
             ),
@@ -531,18 +645,22 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
         }
 
         print(
-            'Tail Dataset Augmentation Setup'
+            'Second-Stage Tail Dataset Augmentation Setup'
             '------------------------------------------'
         )
         print(augmentation_setup)
 
         logger.info(
-            'Tail Dataset Augmentation Setup'
+            'Second-Stage Tail Dataset Augmentation Setup'
             '------------------------------------------'
         )
         logger.info(augmentation_setup)
 
-    # 必須在 augmented dataset 建立後再計算
+
+    # Recommendation training 的 batch 數
+    #
+    # 第一階段依舊由 Source train_data 決定；
+    # 第二階段則由 augmented Target train_data 決定。
     num_rows = training_data_for_sampling.shape[0]
 
     num_batches = int(
@@ -648,10 +766,88 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
             seq = seq.to(device)
             target = target.to(device)
             if pretrain_flag:
-                con_batch = con_data.sample(n=args.batch_size).to_dict()
-                con_seq = list(con_batch['seq'].values())
-                con_seq = torch.LongTensor(con_seq)
+
+                # 與 Source batch seed 分開，
+                # 避免兩個 DataFrame 使用相同抽樣序列
+                con_batch_seed = (
+                    args.random_seed
+                    + 1000000
+                    + epoch_temp * num_batches
+                    + j
+                )
+
+                con_batch_df = (
+                    condition_data_for_sampling
+                    .sample(
+                        n=args.batch_size,
+                        random_state=con_batch_seed
+                    )
+                    .copy()
+                )
+
+                # 第一個 epoch 的前三個 condition (
+                if (
+                    epoch_temp == 0
+                    and j < 3
+                ):
+                    condition_tail_count = (
+                        con_batch_df['next']
+                        .astype(int)
+                        .isin(
+                            condition_unpopular_seen_items
+                        )
+                        .sum()
+                    )
+
+                    condition_augmented_count = int(
+                        con_batch_df['is_augmented']
+                        .sum()
+                    )
+
+                    condition_batch_check = {
+                        'batch_size': len(
+                            con_batch_df
+                        ),
+                        'tail_condition_samples': int(
+                            condition_tail_count
+                        ),
+                        'augmented_condition_samples': (
+                            condition_augmented_count
+                        ),
+                        'tail_condition_ratio': round(
+                            condition_tail_count
+                            / len(con_batch_df),
+                            4
+                        ),
+                        'augmented_condition_ratio': round(
+                            condition_augmented_count
+                            / len(con_batch_df),
+                            4
+                        )
+                    }
+
+                    print(
+                        'First-Stage Target Condition Batch Check',
+                        condition_batch_check
+                    )
+
+                    logger.info(
+                        'First-Stage Target Condition Batch Check %s',
+                        condition_batch_check
+                    )
+
+                con_batch = con_batch_df.to_dict()
+
+                con_seq = list(
+                    con_batch['seq'].values()
+                )
+
+                con_seq = torch.LongTensor(
+                    con_seq
+                )
+
                 con_seq = con_seq.to(device)
+
             else:
                 con_seq = None
             scores, diffu_rep, weights, t, item_rep_dis, seq_rep_dis, em_loss = model_joint(seq, target, con_seq, pretrain_flag, args, epoch_temp, train_flag=True)  
