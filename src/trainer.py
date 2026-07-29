@@ -503,7 +503,8 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
     condition_popular_items = None
     condition_unpopular_seen_items = None
     condition_augmentation_stats = None
-
+    # Stage 1 Target-Tail auxiliary recommendation data
+    target_tail_aux_data = None
 
     # =========================================================
     # 第一階段：
@@ -549,6 +550,82 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                 args.random_seed + 200000
             )
         )
+
+        # =========================================================
+        # Stage 1 Target-Tail auxiliary recommendation pool
+        #
+        # condition_data_for_sampling 已包含：
+        # 1. 原始 Popular rows
+        # 2. 原始 Tail rows
+        # 3. augmented Tail rows
+        #
+        # 這裡只保留 next 為 Unpopular-seen 的 rows。
+        # =========================================================
+        target_tail_aux_data = (
+            condition_data_for_sampling[
+                condition_data_for_sampling[
+                    'next'
+                ]
+                .astype(int)
+                .isin(
+                    condition_unpopular_seen_items
+                )
+            ]
+            .copy()
+            .reset_index(drop=True)
+        )
+
+        target_tail_original_count = int(
+            (
+                target_tail_aux_data[
+                    'is_augmented'
+                ] == 0
+            ).sum()
+        )
+
+        target_tail_augmented_count = int(
+            (
+                target_tail_aux_data[
+                    'is_augmented'
+                ] == 1
+            ).sum()
+        )
+
+        target_tail_aux_setup = {
+            'training_stage': (
+                'source-domain pretraining'
+            ),
+            'auxiliary_task': (
+                'Target Unpopular-seen next-item prediction'
+            ),
+            'target_tail_aux_samples': len(
+                target_tail_aux_data
+            ),
+            'original_tail_samples': (
+                target_tail_original_count
+            ),
+            'augmented_tail_samples': (
+                target_tail_augmented_count
+            ),
+            'target_tail_aux_batch_size': (
+                args.target_tail_aux_batch_size
+            ),
+            'target_tail_aux_weight': (
+                args.target_tail_aux_weight
+            )
+        }
+
+        print(
+            'First-Stage Target-Tail Auxiliary Setup'
+            '------------------------------------------'
+        )
+        print(target_tail_aux_setup)
+
+        logger.info(
+            'First-Stage Target-Tail Auxiliary Setup'
+            '------------------------------------------'
+        )
+        logger.info(target_tail_aux_setup)
 
         condition_setup = {
             'training_stage': (
@@ -847,14 +924,217 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                 )
 
                 con_seq = con_seq.to(device)
+                # =========================================================
+                # 額外抽取 Target Tail auxiliary recommendation batch
+                # =========================================================
+                target_tail_aux_seed = (
+                    args.random_seed
+                    + 2000000
+                    + epoch_temp * num_batches
+                    + j
+                )
 
+                target_tail_aux_batch_df = (
+                    target_tail_aux_data
+                    .sample(
+                        n=args.target_tail_aux_batch_size,
+                        replace=(
+                            len(target_tail_aux_data)
+                            < args.target_tail_aux_batch_size
+                        ),
+                        random_state=target_tail_aux_seed
+                    )
+                    .copy()
+                )
+
+                target_tail_aux_seq = torch.LongTensor(
+                    target_tail_aux_batch_df[
+                        'seq'
+                    ].tolist()
+                ).to(device)
+
+                target_tail_aux_target = (
+                    torch.LongTensor(
+                        target_tail_aux_batch_df[
+                            'next'
+                        ].tolist()
+                    )
+                    .unsqueeze(1)
+                    .to(device)
+                )
+
+                # 第一個 epoch 的前三個 batch 檢查
+                if (
+                    epoch_temp == 0
+                    and j < 3
+                ):
+                    auxiliary_augmented_count = int(
+                        target_tail_aux_batch_df[
+                            'is_augmented'
+                        ].sum()
+                    )
+
+                    auxiliary_batch_check = {
+                        'batch_size': len(
+                            target_tail_aux_batch_df
+                        ),
+                        'original_tail_samples': (
+                            len(target_tail_aux_batch_df)
+                            - auxiliary_augmented_count
+                        ),
+                        'augmented_tail_samples': (
+                            auxiliary_augmented_count
+                        ),
+                        'augmented_ratio': round(
+                            auxiliary_augmented_count
+                            / len(target_tail_aux_batch_df),
+                            4
+                        )
+                    }
+
+                    print(
+                        'First-Stage Target-Tail Auxiliary Batch Check',
+                        auxiliary_batch_check
+                    )
             else:
                 con_seq = None
-            scores, diffu_rep, weights, t, item_rep_dis, seq_rep_dis, em_loss = model_joint(seq, target, con_seq, pretrain_flag, args, epoch_temp, train_flag=True)  
-            loss_diffu_value = model_joint.loss_diffu_ce(diffu_rep, target, pretrain_flag)  ## use this not above        
-            loss_all = loss_diffu_value + em_loss*args.loss_lambda
+                target_tail_aux_seq = None
+                target_tail_aux_target = None
+            # =========================================================
+            # 1. 原本的 Source recommendation forward
+            # =========================================================
+            (
+                scores,
+                diffu_rep,
+                weights,
+                t,
+                item_rep_dis,
+                seq_rep_dis,
+                em_loss
+            ) = model_joint(
+                seq,
+                target,
+                con_seq,
+                pretrain_flag,
+                args,
+                epoch_temp,
+                train_flag=True
+            )
+
+            main_rec_loss = model_joint.loss_diffu_ce(
+                diffu_rep,
+                target,
+                pretrain_flag
+            )
+
+
+            # =========================================================
+            # 2. 預設第二階段沒有 auxiliary loss
+            # =========================================================
+            target_tail_aux_loss = torch.zeros(
+                (),
+                device=device
+            )
+
+
+            # =========================================================
+            # 3. 第一階段額外計算 Target-Tail auxiliary loss
+            # =========================================================
+            if pretrain_flag:
+                (
+                    _,
+                    target_tail_diffu_rep,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _
+                ) = model_joint(
+                    target_tail_aux_seq,
+                    target_tail_aux_target,
+                    None,
+                    False,
+                    args,
+                    epoch_temp,
+                    train_flag=True
+                )
+
+                target_tail_aux_loss = (
+                    model_joint.loss_diffu_ce(
+                        target_tail_diffu_rep,
+                        target_tail_aux_target,
+                        False
+                    )
+                )
+
+
+            # =========================================================
+            # 4. 合併總 loss
+            # =========================================================
+            loss_all = (
+                main_rec_loss
+                + em_loss * args.loss_lambda
+                + args.target_tail_aux_weight
+                * target_tail_aux_loss
+            )
+
+
+            # =========================================================
+            # 5. Loss 檢查放在這裡
+            #    必須在 loss_all.backward() 前面
+            # =========================================================
+            if (
+                pretrain_flag
+                and epoch_temp == 0
+                and j < 3
+            ):
+                loss_check = {
+                    'source_rec_loss': round(
+                        main_rec_loss.detach().item(),
+                        6
+                    ),
+                    'alignment_loss': round(
+                        em_loss.detach().item(),
+                        6
+                    ),
+                    'weighted_alignment_loss': round(
+                        (
+                            args.loss_lambda * em_loss
+                        ).detach().item(),
+                        6
+                    ),
+                    'target_tail_aux_loss': round(
+                        target_tail_aux_loss.detach().item(),
+                        6
+                    ),
+                    'weighted_target_tail_aux_loss': round(
+                        (
+                            args.target_tail_aux_weight
+                            * target_tail_aux_loss
+                        ).detach().item(),
+                        6
+                    ),
+                    'total_loss': round(
+                        loss_all.detach().item(),
+                        6
+                    )
+                }
+
+                print(
+                    'First-Stage Loss Check',
+                    loss_check
+                )
+
+                logger.info(
+                    'First-Stage Loss Check %s',
+                    loss_check
+                )
+
+
+            # =========================================================
+            # 6. 最後才做 backward 和更新參數
+            # =========================================================
             loss_all.backward()
-        
             optimizer.step()
         print('Epoch: {}'.format(epoch_temp))
         logger.info('Epoch: {}'.format(epoch_temp))

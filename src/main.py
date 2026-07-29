@@ -49,6 +49,8 @@ parser.add_argument('--patience', type=int, default=2, help='the number of epoch
 parser.add_argument('--description', type=str, default='Diffu_norm_score', help='Model brief introduction')
 parser.add_argument('--tail_drop_probability', type=float, default=0.2,help=('Probability of dropping each older item ''from an augmented sequence'))
 parser.add_argument('--tail_preserve_recent', type=int, default=2, help=('Number of recent sequence items preserved ''during augmentation'))
+parser.add_argument('--target_tail_aux_batch_size', type=int, default=128, help=('Batch size of Target Unpopular-seen samples ''used by the Stage-1 auxiliary recommendation loss'))
+parser.add_argument('--target_tail_aux_weight', type=float, default=0.1, help=('Weight of the Stage-1 Target-Tail ''auxiliary recommendation loss'))
 args = parser.parse_args()
 
 
