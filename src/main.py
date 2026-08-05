@@ -117,6 +117,7 @@ def main(args):
         s_val_data.at[i, 'negative_samples'] = negative_sample
     t_val_data['negative_samples'] = None
     m = t_val_data['seq'].size
+    
     for i in range(m):
         negative_sample = []
         negative_sample.append(t_val_data['next'][i])
@@ -125,50 +126,112 @@ def main(args):
             if sample not in negative_sample:
                 negative_sample.append(sample)
         t_val_data.at[i, 'negative_samples'] = negative_sample
+    # ============================================================
+    # 建立 Source test negative samples
+    # ============================================================
     s_test_data['negative_samples'] = None
     m = s_test_data['seq'].size
+
     for i in range(m):
-        negative_sample = []
-        negative_sample.append(s_test_data['next'][i])
-        while len(negative_sample)<101 :
-            sample = random.randint(0, args.source_item_num - 1)
+        negative_sample = [s_test_data['next'][i]]
+
+        while len(negative_sample) < 101:
+            sample = random.randint(
+                0,
+                args.source_item_num - 1
+            )
+
             if sample not in negative_sample:
                 negative_sample.append(sample)
+
         s_test_data.at[i, 'negative_samples'] = negative_sample
+
+    # ============================================================
+    # 建立 Target test negative samples
+    # ============================================================
     t_test_data['negative_samples'] = None
     m = t_test_data['seq'].size
+
     for i in range(m):
-        negative_sample = []
-        negative_sample.append(t_test_data['next'][i])
-        while len(negative_sample)<101 :
-            sample = random.randint(0, args.target_item_num - 1)
+        negative_sample = [t_test_data['next'][i]]
+
+        while len(negative_sample) < 101:
+            sample = random.randint(
+                0,
+                args.target_item_num - 1
+            )
+
             if sample not in negative_sample:
                 negative_sample.append(sample)
+
         t_test_data.at[i, 'negative_samples'] = negative_sample
-        
-    diffu_rec = create_model_diffu(args)
-    rec_diffu_joint_model = Att_Diffuse_model(diffu_rec, args)
-    
-    pretrain_flag = True
-    best_model, test_results = model_train(s_tra_data, s_val_data, s_test_data, t_tra_data, rec_diffu_joint_model, args, logger, pretrain_flag)
-    rec_diffu_joint_model.load_state_dict(torch.load("./saved_model/"+args.s_dataset + "_" + args.t_dataset+"/model.pth"))
+
+    # ============================================================
+    # Target-only Baseline
+    # ============================================================
+    print("=" * 60)
+    print("Training mode: TARGET-ONLY BASELINE")
+    print("Source-domain pretraining: OFF")
+    print("Cross-domain alignment: OFF")
+    print("Target-domain training: ON")
+    print("=" * 60)
+
+    logger.info("Training mode: TARGET-ONLY BASELINE")
+
+    # 切換成 Target-domain 設定
     args.item_num = target_item_num
+    args.pretrain_flag = False
     args.eval_interval = 1
     args.patience = 5
-    pretrain_flag = False
-    best_model, test_results = model_train(t_tra_data, t_val_data, t_test_data, None, rec_diffu_joint_model, args, logger, pretrain_flag)
-    target_model_path = (
-        "./saved_model/"
-        + args.s_dataset
-        + "_"
-        + args.t_dataset
-        + "/target_model.pth"
+
+    # 建立全新的隨機初始化模型
+    diffu_rec = create_model_diffu(args)
+
+    rec_diffu_joint_model = Att_Diffuse_model(
+        diffu_rec,
+        args
     )
 
-    torch.save(best_model.state_dict(), target_model_path)
+    # 直接使用 Target-domain 訓練
+    best_model, test_results = model_train(
+        t_tra_data,
+        t_val_data,
+        t_test_data,
+        None,
+        rec_diffu_joint_model,
+        args,
+        logger,
+        False
+    )
 
-    print("Target model saved at:", target_model_path)
-    logger.info("Target model saved at: %s", target_model_path)
+    # 儲存模型
+    save_dir = os.path.join(
+        "./saved_model",
+        args.s_dataset + "_" + args.t_dataset
+    )
+
+    os.makedirs(save_dir, exist_ok=True)
+
+    target_model_path = os.path.join(
+        save_dir,
+        "target_only_model.pth"
+    )
+
+    torch.save(
+        best_model.state_dict(),
+        target_model_path
+    )
+
+    print(
+        "Target-only model saved at:",
+        target_model_path
+    )
+
+    logger.info(
+        "Target-only model saved at: %s",
+        target_model_path
+    )
+
 
 if __name__ == '__main__':
     main(args)
