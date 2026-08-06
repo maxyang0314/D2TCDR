@@ -53,12 +53,37 @@ class Att_Diffuse_model(nn.Module):
         return self.loss_ce(scores, labels.squeeze(-1))
 
 
-    def loss_diffu_ce(self, rep_diffu, labels, pretrain_flag):
+    def loss_diffu_ce(self, rep_diffu, labels, pretrain_flag, sample_weights=None):
+        """
+        第一階段可以依 Source next 的熱門度，
+        調整每一筆 recommendation CE loss 的權重。
+
+        第二階段 sample_weights=None，
+        維持原始 Target recommendation loss。
+        """
+
         if pretrain_flag:
             scores = torch.matmul(rep_diffu, self.shared_layer(self.souce_embeddings.weight).t())
         else:
             scores = torch.matmul(rep_diffu, self.target_embeddings.weight.t())
-        return self.loss_ce(scores, labels.squeeze(-1))
+
+        # 每筆樣本各自的 Cross-Entropy
+        per_sample_loss = self.loss_ce_rec(scores, labels.squeeze(-1))
+
+        # 第二階段或沒有提供權重時：
+        # 等同於原本的平均 Cross-Entropy
+        if sample_weights is None:
+            return per_sample_loss.mean()
+
+        sample_weights = sample_weights.to(device=per_sample_loss.device, dtype=per_sample_loss.dtype)
+
+        # 將 batch 的平均權重正規化為 1
+        # 避免因為加權而改變整體 loss scale
+        normalized_weights = (sample_weights / sample_weights.mean().clamp_min(1e-8))
+
+        weighted_loss = (per_sample_loss * normalized_weights).mean()
+
+        return weighted_loss
 
     def diffu_rep_pre(self, rep_diffu, pretrain_flag):
         if pretrain_flag:

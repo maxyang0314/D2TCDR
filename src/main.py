@@ -34,6 +34,10 @@ parser.add_argument('--decay_step', type=int, default=100, help='Decay step for 
 parser.add_argument('--gamma', type=float, default=0.1, help='Gamma for StepLR')
 parser.add_argument('--metric_ks', nargs='+', type=int, default=[5, 10, 20], help='ks for Metric@k')
 parser.add_argument('--popular_ratio', type=float, default=0.2, help='Top ratio of target-domain training items treated as popular')
+parser.add_argument('--source_popular_ratio', type=float, default=0.2, help='Top ratio of source-domain observed items treated as popular')
+parser.add_argument('--source_tail_weight', type=float, default=2.0, help='CE loss weight for source samples whose next item is unpopular')
+parser.add_argument('--source_model_name', type=str, default='source_next_reweight_model.pth', help='Checkpoint name for source-next reweighting')
+parser.add_argument('--target_model_name', type=str, default='source_next_reweight_target_model.pth', help='Final target model name for source-next reweighting')
 parser.add_argument('--optimizer', type=str, default='Adam', choices=['SGD', 'Adam'])
 parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
 parser.add_argument('--loss_lambda', type=float, default=1, help='loss weight for diffusion')
@@ -151,18 +155,37 @@ def main(args):
     
     pretrain_flag = True
     best_model, test_results = model_train(s_tra_data, s_val_data, s_test_data, t_tra_data, rec_diffu_joint_model, args, logger, pretrain_flag)
-    rec_diffu_joint_model.load_state_dict(torch.load("./saved_model/"+args.s_dataset + "_" + args.t_dataset+"/model.pth"))
+    save_dir = os.path.join(
+        "./saved_model",
+        args.s_dataset + "_" + args.t_dataset
+    )
+
+    os.makedirs(save_dir, exist_ok=True)
+
+    source_model_path = os.path.join(
+        save_dir,
+        args.source_model_name
+    )
+
+    rec_diffu_joint_model.load_state_dict(
+        torch.load(
+            source_model_path,
+            map_location=args.device
+        )
+    )
+
+    print(
+        "Loaded source-next reweighted model:",
+        source_model_path
+    )
     args.item_num = target_item_num
     args.eval_interval = 1
     args.patience = 5
     pretrain_flag = False
     best_model, test_results = model_train(t_tra_data, t_val_data, t_test_data, None, rec_diffu_joint_model, args, logger, pretrain_flag)
-    target_model_path = (
-        "./saved_model/"
-        + args.s_dataset
-        + "_"
-        + args.t_dataset
-        + "/target_model.pth"
+    target_model_path = os.path.join(
+        save_dir,
+        args.target_model_name
     )
 
     torch.save(best_model.state_dict(), target_model_path)

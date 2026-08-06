@@ -232,19 +232,157 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
     bad_count = 0
     num_rows=train_data.shape[0]
     num_batches=int(num_rows/args.batch_size)
+    # ============================================================
+    # Source-next popularity-aware reweighting
+    # 只在第一階段啟用
+    # ============================================================
+    source_popular_items = None
+    source_unpopular_seen_items = None
+
+    if pretrain_flag:
+        source_popular_ratio = getattr(args, 'source_popular_ratio', 0.2)
+
+        source_tail_weight = getattr(args, 'source_tail_weight', 2.0)
+
+        if source_tail_weight <= 0:
+            raise ValueError("source_tail_weight must be greater than 0, " f"got {source_tail_weight}")
+
+        (
+            source_popular_items,
+            source_unpopular_seen_items,
+            source_observed_items,
+            source_item_counter
+        ) = build_item_popularity_groups(train_data, popular_ratio=source_popular_ratio)
+
+        # 根據每筆 Source training row 的 next 分組
+        source_popular_next_count = sum(
+            int(item) in source_popular_items
+            for item in train_data['next']
+        )
+
+        source_tail_next_count = sum(
+            int(item) in source_unpopular_seen_items
+            for item in train_data['next']
+        )
+
+        source_total_next_count = len(train_data)
+
+        source_next_definition = {
+            'source_popular_ratio': (
+                source_popular_ratio
+            ),
+            'source_observed_items': len(
+                source_observed_items
+            ),
+            'source_popular_items': len(
+                source_popular_items
+            ),
+            'source_unpopular_seen_items': len(
+                source_unpopular_seen_items
+            ),
+            'source_training_samples': (
+                source_total_next_count
+            ),
+            'source_popular_next_samples': (
+                source_popular_next_count
+            ),
+            'source_tail_next_samples': (
+                source_tail_next_count
+            ),
+            'source_popular_next_ratio': round(
+                source_popular_next_count
+                / source_total_next_count,
+                4
+            ),
+            'source_tail_next_ratio': round(
+                source_tail_next_count
+                / source_total_next_count,
+                4
+            ),
+            'source_popular_weight': 1.0,
+            'source_tail_weight': source_tail_weight
+        }
+
+        print(
+            'Source Next Reweighting'
+            '-----------------------------------------------'
+        )
+        print(source_next_definition)
+
+        logger.info(
+            'Source Next Reweighting'
+            '-----------------------------------------------'
+        )
+        logger.info(source_next_definition)
+
     for epoch_temp in range(epochs):
 
         model_joint.train()
         flag_update = 0
         for j in range(num_batches):
-            batch = train_data.sample(n=args.batch_size).to_dict()
-            seq = list(batch['seq'].values())
-            target=list(batch['next'].values())
+            batch_df = train_data.sample(n=args.batch_size)
+            seq_list = batch_df['seq'].tolist()
+            target_list = [
+                int(item)
+                for item in batch_df['next'].tolist()
+            ]
+            seq = torch.LongTensor(seq_list).to(device)
+            target = (torch.LongTensor(target_list).unsqueeze(1).to(device))
             optimizer.zero_grad()
-            seq = torch.LongTensor(seq)
-            target = (torch.LongTensor(target)).unsqueeze(1)
-            seq = seq.to(device)
-            target = target.to(device)
+            sample_weights = None
+
+            # 只改第一階段的 Source recommendation CE
+            if pretrain_flag:
+                source_tail_weight = getattr(args, 'source_tail_weight', 2.0)
+                sample_weights = torch.tensor(
+                    [
+                        1.0
+                        if item in source_popular_items
+                        else source_tail_weight
+                        for item in target_list
+                    ],
+                    dtype=torch.float32,
+                    device=device
+                )
+
+                # 只印出前 3 個 batch 檢查
+                if epoch_temp == 0 and j < 3:
+                    batch_popular_next_count = sum(
+                        item in source_popular_items
+                        for item in target_list
+                    )
+
+                    batch_tail_next_count = (
+                        len(target_list)
+                        - batch_popular_next_count
+                    )
+
+                    batch_weight_info = {
+                        'batch': j,
+                        'source_popular_next_samples': (
+                            batch_popular_next_count
+                        ),
+                        'source_tail_next_samples': (
+                            batch_tail_next_count
+                        ),
+                        'source_tail_weight': (
+                            source_tail_weight
+                        ),
+                        'raw_weight_mean': round(
+                            sample_weights.mean().item(),
+                            4
+                        )
+                    }
+
+                    print(
+                        'Source Next Batch Weight:',
+                        batch_weight_info
+                    )
+
+                    logger.info(
+                        'Source Next Batch Weight: %s',
+                        batch_weight_info
+                    )
             if pretrain_flag:
                 con_batch = con_data.sample(n=args.batch_size).to_dict()
                 con_seq = list(con_batch['seq'].values())
@@ -253,7 +391,7 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
             else:
                 con_seq = None
             scores, diffu_rep, weights, t, item_rep_dis, seq_rep_dis, em_loss = model_joint(seq, target, con_seq, pretrain_flag, args, epoch_temp, train_flag=True)  
-            loss_diffu_value = model_joint.loss_diffu_ce(diffu_rep, target, pretrain_flag)  ## use this not above        
+            loss_diffu_value = (model_joint.loss_diffu_ce(diffu_rep, target, pretrain_flag, sample_weights=sample_weights))       
             loss_all = loss_diffu_value + em_loss*args.loss_lambda
             loss_all.backward()
         
@@ -306,7 +444,16 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                 if flag_update >= 3:
                     best_model = copy.deepcopy(model_joint)
                     if pretrain_flag:
-                        torch.save(model_joint.state_dict(), "./saved_model/"+args.s_dataset + "_" + args.t_dataset+"/model.pth")
+                        source_model_path = ("./saved_model/" + args.s_dataset + "_" + args.t_dataset + "/" + args.source_model_name)
+                        torch.save(model_joint.state_dict(), source_model_path)
+                        print(
+                            "Source-next reweighted model saved at:",
+                            source_model_path
+                        )
+                        logger.info(
+                            "Source-next reweighted model saved at: %s",
+                            source_model_path
+                        )
             if bad_count >= args.patience:
                 break
           
