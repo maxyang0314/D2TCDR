@@ -344,60 +344,86 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
             for k in metric_ks
         }
 
-        popular_items = None
-        unpopular_seen_items = None
-        observed_train_items = None
-        item_counter = None
+        # ========================================================
+        # 建立目前 Domain 的 Popular / Unpopular-seen 集合
+        # ========================================================
 
-        # 只在 target-domain 階段執行 popularity 分析
-        if not pretrain_flag:
-            popular_ratio = getattr(args, 'popular_ratio', 0.2)
+        # pretrain_flag=True：目前評估的是 Source domain
+        # pretrain_flag=False：目前評估的是 Target domain
+        domain_name = (
+            'Source'
+            if pretrain_flag
+            else 'Target'
+        )
 
-            (
+        # main 分支目前只有 popular_ratio。
+        # 未來套用到 Source-next 分支時，如果有
+        # source_popular_ratio，就優先使用該參數。
+        if pretrain_flag:
+            popular_ratio = getattr(
+                args,
+                'source_popular_ratio',
+                getattr(
+                    args,
+                    'popular_ratio',
+                    0.2
+                )
+            )
+        else:
+            popular_ratio = getattr(
+                args,
+                'popular_ratio',
+                0.2
+            )
+
+        (
             popular_items,
             unpopular_seen_items,
             observed_train_items,
             item_counter
-            ) = build_item_popularity_groups(
-                train_data,
-                popular_ratio=popular_ratio
+        ) = build_item_popularity_groups(
+            train_data,
+            popular_ratio=popular_ratio
+        )
+
+        popularity_definition = {
+            'domain': domain_name,
+            'popular_ratio': popular_ratio,
+
+            # 目前 domain 的 training seq + next
+            # 中出現過的商品種類數
+            'observed_train_items': len(
+                observed_train_items
+            ),
+
+            # observed items 中最熱門的前 20%
+            'popular_items': len(
+                popular_items
+            ),
+
+            # observed items 中其餘 80%
+            'unpopular_seen_items': len(
+                unpopular_seen_items
+            ),
+
+            # 測試時才會知道有哪些 ground truth unseen
+            'unseen_items_in_test': (
+                'calculated from test ground truth'
             )
+        }
 
-            popularity_definition = {
-                'popular_ratio': popular_ratio,
+        print(
+            f'{domain_name} Popularity Definition'
+            '---------------------------------------------'
+        )
+        print(popularity_definition)
 
-                # 訓練集 seq + next 中出現過的商品數
-                'observed_train_items': len(
-                    observed_train_items
-                ),
-
-                # observed items 中的前 20%
-                'popular_items': len(
-                    popular_items
-                ),
-
-                # observed items 中其餘 80%
-                'unpopular_seen_items': len(
-                    unpopular_seen_items
-                ),
-
-                # Unseen 數量要等測試 target 跑完才知道
-                'unseen_items_in_test': (
-                    'calculated from test ground truth'
-                )
-            }
-
-            print(
-                'Popularity Definition'
-                '------------------------------------------------'
-            )
-            print(popularity_definition)
-
-            logger.info(
-                'Popularity Definition'
-                '------------------------------------------------'
-            )
-            logger.info(popularity_definition)
+        logger.info(
+            '%s Popularity Definition'
+            '---------------------------------------------',
+            domain_name
+        )
+        logger.info(popularity_definition)
 
         popular_lookup = None
 
@@ -507,140 +533,157 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                 )
 
             # ==================================================
-            # 4. Target-domain Popular / Unpopular-seen /
-            #    Unseen 分組
+            # 4. 依目前 Domain 的 test ground truth 分組
             # ==================================================
-            if not pretrain_flag:
-                target_cpu = (
-                    target.view(-1)
-                    .detach()
-                    .cpu()
-                    .tolist()
+
+            target_cpu = (
+                target.view(-1)
+                .detach()
+                .cpu()
+                .tolist()
+            )
+
+            # Ground truth 是否為 Popular item
+            popular_mask = torch.tensor(
+                [
+                    int(item) in popular_items
+                    for item in target_cpu
+                ],
+                dtype=torch.bool
+            )
+
+            # Ground truth 是否曾出現在目前 domain 的
+            # training seq 或 training next
+            observed_mask = torch.tensor(
+                [
+                    int(item) in observed_train_items
+                    for item in target_cpu
+                ],
+                dtype=torch.bool
+            )
+
+            # Training 中出現過，但不是 Popular
+            unpopular_seen_mask = (
+                observed_mask
+                & ~popular_mask
+            )
+
+            # Training seq 和 next 都沒出現過
+            unseen_mask = ~observed_mask
+
+            batch_popular_count = (
+                popular_mask.sum().item()
+            )
+
+            batch_unpopular_seen_count = (
+                unpopular_seen_mask.sum().item()
+            )
+
+            batch_unseen_count = (
+                unseen_mask.sum().item()
+            )
+
+            # 確認 Popular、Unpopular-seen、Unseen
+            # 三組互斥且涵蓋整個 batch
+            batch_group_total = (
+                batch_popular_count
+                + batch_unpopular_seen_count
+                + batch_unseen_count
+            )
+
+            if batch_group_total != current_batch_size:
+                raise RuntimeError(
+                    f"{domain_name} popularity grouping error: "
+                    f"group total={batch_group_total}, "
+                    f"batch size={current_batch_size}"
                 )
 
-                # 是否屬於 training 中的 popular items
-                popular_mask = torch.tensor(
-                    [
-                        int(item) in popular_items
-                        for item in target_cpu
-                    ],
-                    dtype=torch.bool
-                )
+            popular_count += batch_popular_count
 
-                # 是否曾在 training seq 或 next 出現
-                observed_mask = torch.tensor(
-                    [
-                        int(item) in observed_train_items
-                        for item in target_cpu
-                    ],
-                    dtype=torch.bool
-                )
+            unpopular_seen_count += (
+                batch_unpopular_seen_count
+            )
 
-                # Training 中出現過，但不是 popular
-                unpopular_seen_mask = (
-                    observed_mask & ~popular_mask
-                )
+            unseen_count += batch_unseen_count
 
-                # Training seq 與 next 都完全沒出現過
-                unseen_mask = ~observed_mask
+            # 分別累積三組 HR / NDCG
+            for metric_name, values in sample_metrics.items():
 
-                batch_popular_count = (
-                    popular_mask.sum().item()
-                )
-
-                batch_unpopular_seen_count = (
-                    unpopular_seen_mask.sum().item()
-                )
-
-                batch_unseen_count = (
-                    unseen_mask.sum().item()
-                )
-
-                # 確認三組互斥且涵蓋整個 batch
-                batch_group_total = (
-                    batch_popular_count
-                    + batch_unpopular_seen_count
-                    + batch_unseen_count
-                )
-
-                if batch_group_total != current_batch_size:
-                    raise RuntimeError(
-                        "Popularity grouping error: "
-                        f"group total={batch_group_total}, "
-                        f"batch size={current_batch_size}"
-                    )
-
-                popular_count += batch_popular_count
-
-                unpopular_seen_count += (
-                    batch_unpopular_seen_count
-                )
-
-                unseen_count += batch_unseen_count
-
-                for metric_name, values in sample_metrics.items():
-                    if batch_popular_count > 0:
-                        popular_metric_sums[
-                            metric_name
-                        ] += (
-                            values[popular_mask]
-                            .sum()
-                            .item()
-                        )
-
-                    if batch_unpopular_seen_count > 0:
-                        unpopular_seen_metric_sums[
-                            metric_name
-                        ] += (
-                            values[unpopular_seen_mask]
-                            .sum()
-                            .item()
-                        )
-
-                    if batch_unseen_count > 0:
-                        unseen_metric_sums[
-                            metric_name
-                        ] += (
-                            values[unseen_mask]
-                            .sum()
-                            .item()
-                        )
-
-                # ========================================
-                # 5. Top-K 推薦清單中的 PopularRatio
-                # ========================================
-                if popular_lookup is None:
-                    popular_lookup = torch.zeros(
-                        scores_rec_diffu.shape[1],
-                        dtype=torch.bool,
-                        device=device
-                    )
-
-                    valid_popular_ids = [
-                        int(item)
-                        for item in popular_items
-                        if 0 <= int(item) < popular_lookup.shape[0]
-                    ]
-
-                    if len(valid_popular_ids) > 0:
-                        popular_lookup[
-                            torch.LongTensor(
-                                valid_popular_ids
-                            ).to(device)
-                        ] = True
-
-                for k in metric_ks:
-                    recommended_items = topk_indices[:, :k]
-
-                    popular_recommend_count[k] += (
-                        popular_lookup[recommended_items]
+                if batch_popular_count > 0:
+                    popular_metric_sums[
+                        metric_name
+                    ] += (
+                        values[popular_mask]
                         .sum()
                         .item()
                     )
 
-                    total_recommend_count[k] += (
-                        current_batch_size * k
+                if batch_unpopular_seen_count > 0:
+                    unpopular_seen_metric_sums[
+                        metric_name
+                    ] += (
+                        values[
+                            unpopular_seen_mask
+                        ]
+                        .sum()
+                        .item()
                     )
+
+                if batch_unseen_count > 0:
+                    unseen_metric_sums[
+                        metric_name
+                    ] += (
+                        values[unseen_mask]
+                        .sum()
+                        .item()
+                    )
+
+            # ==================================================
+            # 5. Top-K 推薦清單中的 PopularRatio
+            # ==================================================
+
+            # 建立 item ID → 是否為 Popular 的查詢表
+            if popular_lookup is None:
+                popular_lookup = torch.zeros(
+                    scores_rec_diffu.shape[1],
+                    dtype=torch.bool,
+                    device=device
+                )
+
+                valid_popular_ids = [
+                    int(item)
+                    for item in popular_items
+                    if (
+                        0
+                        <= int(item)
+                        < popular_lookup.shape[0]
+                    )
+                ]
+
+                if len(valid_popular_ids) > 0:
+                    popular_lookup[
+                        torch.LongTensor(
+                            valid_popular_ids
+                        ).to(device)
+                    ] = True
+
+            # 統計 Top-K 中有多少推薦商品屬於 Popular
+            for k in metric_ks:
+                recommended_items = (
+                    topk_indices[:, :k]
+                )
+
+                popular_recommend_count[k] += (
+                    popular_lookup[
+                        recommended_items
+                    ]
+                    .sum()
+                    .item()
+                )
+
+                total_recommend_count[k] += (
+                    current_batch_size * k
+                )
 
         # ============================================
         # 6. 計算最終結果
@@ -651,129 +694,142 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
         )
 
         print(
-            'Test Overall'
+            f'{domain_name} Test Overall'
             '------------------------------------------------------'
         )
         print(test_metrics_dict_mean)
 
         logger.info(
-            'Test Overall'
+            '%s Test Overall'
             '------------------------------------------------------'
         )
         logger.info(test_metrics_dict_mean)
 
-        if not pretrain_flag:
-            popular_metrics_dict = finalize_metric_sums(
-                popular_metric_sums,
+        # ========================================================
+        # 計算目前 Domain 的分組結果
+        # ========================================================
+
+        popular_metrics_dict = finalize_metric_sums(
+            popular_metric_sums,
+            popular_count
+        )
+
+        unpopular_seen_metrics_dict = (
+            finalize_metric_sums(
+                unpopular_seen_metric_sums,
+                unpopular_seen_count
+            )
+        )
+
+        unseen_metrics_dict = finalize_metric_sums(
+            unseen_metric_sums,
+            unseen_count
+        )
+
+        popular_ratio_dict = {
+            f'PopularRatio@{k}': round(
+                popular_recommend_count[k]
+                / total_recommend_count[k]
+                * 100,
+                4
+            )
+            if total_recommend_count[k] > 0
+            else None
+            for k in metric_ks
+        }
+
+        group_size_dict = {
+            'domain': domain_name,
+
+            'Overall_test_samples': (
+                overall_count
+            ),
+
+            'Popular_test_samples': (
                 popular_count
-            )
+            ),
 
-            unpopular_seen_metrics_dict = (
-                finalize_metric_sums(
-                    unpopular_seen_metric_sums,
-                    unpopular_seen_count
-                )
-            )
+            'Unpopular_seen_test_samples': (
+                unpopular_seen_count
+            ),
 
-            unseen_metrics_dict = finalize_metric_sums(
-                unseen_metric_sums,
+            'Unseen_test_samples': (
                 unseen_count
+            ),
+
+            'Grouped_test_samples': (
+                popular_count
+                + unpopular_seen_count
+                + unseen_count
             )
+        }
 
-            popular_ratio_dict = {
-                f'PopularRatio@{k}': round(
-                    popular_recommend_count[k]
-                    / total_recommend_count[k]
-                    * 100,
-                    4
-                )
-                if total_recommend_count[k] > 0
-                else None
-                for k in metric_ks
-            }
+        print(
+            f'{domain_name} Test Group Size'
+            '----------------------------------------------'
+        )
+        print(group_size_dict)
 
-            group_size_dict = {
-                'Overall_test_samples': overall_count,
+        print(
+            f'{domain_name} Test Popular Ground Truth'
+            '-------------------------------------'
+        )
+        print(popular_metrics_dict)
 
-                'Popular_test_samples': (
-                    popular_count
-                ),
+        print(
+            f'{domain_name} Test Unpopular-Seen Ground Truth'
+            '------------------------------'
+        )
+        print(unpopular_seen_metrics_dict)
 
-                'Unpopular_seen_test_samples': (
-                    unpopular_seen_count
-                ),
+        print(
+            f'{domain_name} Test Unseen Ground Truth'
+            '--------------------------------------'
+        )
+        print(unseen_metrics_dict)
 
-                'Unseen_test_samples': (
-                    unseen_count
-                ),
+        print(
+            f'{domain_name} Recommendation Popularity'
+            '-------------------------------------'
+        )
+        print(popular_ratio_dict)
 
-                # 用來檢查三組加總
-                'Grouped_test_samples': (
-                    popular_count
-                    + unpopular_seen_count
-                    + unseen_count
-                )
-            }
+        logger.info(
+            '%s Test Group Size'
+            '----------------------------------------------',
+            domain_name
+        )
+        logger.info(group_size_dict)
 
-            print(
-                'Test Group Size'
-                '---------------------------------------------------'
-            )
-            print(group_size_dict)
+        logger.info(
+            '%s Test Popular Ground Truth'
+            '-------------------------------------',
+            domain_name
+        )
+        logger.info(popular_metrics_dict)
 
-            print(
-                'Test Popular Ground Truth'
-                '------------------------------------------'
-            )
-            print(popular_metrics_dict)
+        logger.info(
+            '%s Test Unpopular-Seen Ground Truth'
+            '------------------------------',
+            domain_name
+        )
+        logger.info(
+            unpopular_seen_metrics_dict
+        )
 
-            print(
-                'Test Unpopular-Seen Ground Truth'
-                '-----------------------------------'
-            )
-            print(unpopular_seen_metrics_dict)
+        logger.info(
+            '%s Test Unseen Ground Truth'
+            '--------------------------------------',
+            domain_name
+        )
+        logger.info(unseen_metrics_dict)
 
-            print(
-                'Test Unseen Ground Truth'
-                '-------------------------------------------'
-            )
-            print(unseen_metrics_dict)
-
-            print(
-                'Recommendation Popularity'
-                '------------------------------------------'
-            )
-            print(popular_ratio_dict)
-
-            logger.info(
-                'Test Group Size'
-                '---------------------------------------------------'
-            )
-            logger.info(group_size_dict)
-
-            logger.info(
-                'Test Popular Ground Truth'
-                '------------------------------------------'
-            )
-            logger.info(popular_metrics_dict)
-
-            logger.info(
-                'Test Unpopular-Seen Ground Truth'
-                '-----------------------------------'
-            )
-            logger.info(unpopular_seen_metrics_dict)
-
-            logger.info(
-                'Test Unseen Ground Truth'
-                '-------------------------------------------'
-            )
-            logger.info(unseen_metrics_dict)
-
-            logger.info(
-                'Recommendation Popularity'
-                '------------------------------------------'
-            )
-            logger.info(popular_ratio_dict)
+        logger.info(
+            '%s Recommendation Popularity'
+            '-------------------------------------',
+            domain_name
+        )
+        logger.info(popular_ratio_dict)
         
     print('Best Eval---------------------------------------------------------')
     logger.info('Best Eval---------------------------------------------------------')
