@@ -34,6 +34,11 @@ parser.add_argument('--decay_step', type=int, default=100, help='Decay step for 
 parser.add_argument('--gamma', type=float, default=0.1, help='Gamma for StepLR')
 parser.add_argument('--metric_ks', nargs='+', type=int, default=[5, 10, 20], help='ks for Metric@k')
 parser.add_argument('--popular_ratio', type=float, default=0.2, help='Top ratio of target-domain training items treated as popular')
+parser.add_argument('--source_seq_popular_ratio', type=float, default=0.2, help='Top ratio of source-domain training items treated as popular')
+parser.add_argument('--source_seq_popular_drop_probability', type=float, default=0.2, help='Drop probability for popular items in source training sequences')
+parser.add_argument('--source_seq_preserve_recent', type=int, default=2, help='Number of most recent valid source sequence items that are never dropped')
+parser.add_argument('--source_seq_model_name', type=str, default='source_seq_model.pth')
+parser.add_argument('--source_seq_target_model_name', type=str, default='source_seq_target_model.pth')
 parser.add_argument('--optimizer', type=str, default='Adam', choices=['SGD', 'Adam'])
 parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
 parser.add_argument('--loss_lambda', type=float, default=1, help='loss weight for diffusion')
@@ -147,28 +152,126 @@ def main(args):
         t_test_data.at[i, 'negative_samples'] = negative_sample
         
     diffu_rec = create_model_diffu(args)
-    rec_diffu_joint_model = Att_Diffuse_model(diffu_rec, args)
-    
+    rec_diffu_joint_model = Att_Diffuse_model(
+        diffu_rec,
+        args
+    )
+
+    # ==========================================================
+    # Stage 1: Source training
+    # ==========================================================
+
     pretrain_flag = True
-    best_model, test_results = model_train(s_tra_data, s_val_data, s_test_data, t_tra_data, rec_diffu_joint_model, args, logger, pretrain_flag)
-    rec_diffu_joint_model.load_state_dict(torch.load("./saved_model/"+args.s_dataset + "_" + args.t_dataset+"/model.pth"))
-    args.item_num = target_item_num
-    args.eval_interval = 1
-    args.patience = 5
-    pretrain_flag = False
-    best_model, test_results = model_train(t_tra_data, t_val_data, t_test_data, None, rec_diffu_joint_model, args, logger, pretrain_flag)
-    target_model_path = (
+
+    best_model, source_test_results = model_train(
+        s_tra_data,
+        s_val_data,
+        s_test_data,
+        t_tra_data,
+        rec_diffu_joint_model,
+        args,
+        logger,
+        pretrain_flag
+    )
+
+    # ==========================================================
+    # 儲存 Direction 2 的 Source-seq model
+    # ==========================================================
+
+    source_model_dir = (
         "./saved_model/"
         + args.s_dataset
         + "_"
         + args.t_dataset
-        + "/target_model.pth"
     )
 
-    torch.save(best_model.state_dict(), target_model_path)
+    os.makedirs(
+        source_model_dir,
+        exist_ok=True
+    )
 
-    print("Target model saved at:", target_model_path)
-    logger.info("Target model saved at: %s", target_model_path)
+    source_model_path = (
+        source_model_dir
+        + "/"
+        + args.source_seq_model_name
+    )
+
+    torch.save(
+        best_model.state_dict(),
+        source_model_path
+    )
+
+    print(
+        "Source-seq model saved at:",
+        source_model_path
+    )
+
+    logger.info(
+        "Source-seq model saved at: %s",
+        source_model_path
+    )
+
+    # ==========================================================
+    # 載入 Stage 1 最佳 Source model
+    # ==========================================================
+
+    rec_diffu_joint_model.load_state_dict(
+        torch.load(
+            source_model_path,
+            map_location=args.device
+        )
+    )
+
+    print(
+        "Loading Source-seq model from:",
+        source_model_path
+    )
+
+    # ==========================================================
+    # Stage 2: Target training
+    # ==========================================================
+
+    args.item_num = target_item_num
+    args.eval_interval = 1
+    args.patience = 5
+
+    pretrain_flag = False
+
+    best_model, test_results = model_train(
+        t_tra_data,
+        t_val_data,
+        t_test_data,
+        None,
+        rec_diffu_joint_model,
+        args,
+        logger,
+        pretrain_flag
+    )
+
+    # ==========================================================
+    # 儲存 Target model
+    # ==========================================================
+
+    target_model_path = (
+        source_model_dir
+        + "/"
+        + args.source_seq_target_model_name
+    )
+
+    torch.save(
+        best_model.state_dict(),
+        target_model_path
+    )
+
+    print(
+        "Target model saved at:",
+        target_model_path
+    )
+
+    logger.info(
+        "Target model saved at: %s",
+        target_model_path
+    )
 
 if __name__ == '__main__':
     main(args)

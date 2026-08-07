@@ -133,6 +133,107 @@ def build_item_popularity_groups(
         item_counter
     )
 
+def source_popular_sequence_dropout(sequences, popular_items, drop_probability=0.2, preserve_recent=2, max_len=8, rng=None):
+    """
+    只對 Source training sequence 中的 Popular item 做 dropout。
+
+    規則：
+    1. padding item 0 不處理
+    2. Tail item 不移除
+    3. Popular item 以 drop_probability 機率移除
+    4. 最近 preserve_recent 個有效 interaction 一定保留
+    5. Source next 不在這裡處理，因此不會被修改
+    6. 移除後重新 left padding，維持 max_len
+    """
+
+    if rng is None:
+        rng = np.random.RandomState()
+
+    augmented_sequences = []
+
+    stats = {
+        'total_valid_tokens_before': 0,
+        'popular_tokens_before': 0,
+        'tail_tokens_before': 0,
+        'dropped_popular_tokens': 0,
+        'modified_sequences': 0
+    }
+
+    for seq in sequences:
+
+        # 去掉 padding 0，但保留原本時間順序
+        valid_items = [
+            int(item)
+            for item in seq
+            if int(item) != 0
+        ]
+
+        stats['total_valid_tokens_before'] += len(
+            valid_items
+        )
+
+        for item in valid_items:
+            if item in popular_items:
+                stats['popular_tokens_before'] += 1
+            else:
+                stats['tail_tokens_before'] += 1
+
+        # 沒有有效 item 時直接保留全 0
+        if len(valid_items) == 0:
+            augmented_sequences.append(
+                [0] * max_len
+            )
+            continue
+
+        # 最近 preserve_recent 個 interaction
+        # 一律保留
+        preserve_start = max(
+            0,
+            len(valid_items) - preserve_recent
+        )
+
+        kept_items = []
+        sequence_modified = False
+
+        for idx, item in enumerate(valid_items):
+
+            # 最近的 interaction 不做 dropout
+            if idx >= preserve_start:
+                kept_items.append(item)
+                continue
+
+            # Tail item 全部保留
+            if item not in popular_items:
+                kept_items.append(item)
+                continue
+
+            # 只有較早的 Popular item 才可能被移除
+            if rng.rand() < drop_probability:
+                stats[
+                    'dropped_popular_tokens'
+                ] += 1
+
+                sequence_modified = True
+            else:
+                kept_items.append(item)
+
+        if sequence_modified:
+            stats['modified_sequences'] += 1
+
+        # 保險：只保留最後 max_len 個
+        kept_items = kept_items[-max_len:]
+
+        # 重新 left padding
+        padded_sequence = (
+            [0] * (max_len - len(kept_items))
+            + kept_items
+        )
+
+        augmented_sequences.append(
+            padded_sequence
+        )
+
+    return augmented_sequences, stats
 
 def per_sample_metrics(scores, labels, ks):
     """
@@ -232,6 +333,68 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
     bad_count = 0
     num_rows=train_data.shape[0]
     num_batches=int(num_rows/args.batch_size)
+    # ========================================================
+    # Direction 2:
+    # 建立 Source Popular item 集合
+    # ========================================================
+
+    source_seq_popular_items = None
+    source_seq_unpopular_seen_items = None
+
+    # 使用獨立 RNG。
+    # 這樣 sequence dropout 不會改變 pandas.sample()
+    # 原本使用的全域 numpy random state，
+    # 可以盡量維持與 baseline 相同的 batch sampling。
+    source_seq_rng = np.random.RandomState(
+        args.random_seed + 1000
+    )
+
+    if pretrain_flag:
+
+        (
+            source_seq_popular_items,
+            source_seq_unpopular_seen_items,
+            source_seq_observed_items,
+            source_seq_item_counter
+        ) = build_item_popularity_groups(
+            train_data,
+            popular_ratio=(
+                args.source_seq_popular_ratio
+            )
+        )
+
+        source_seq_definition = {
+            'source_seq_popular_ratio': (
+                args.source_seq_popular_ratio
+            ),
+            'observed_train_items': len(
+                source_seq_observed_items
+            ),
+            'popular_items': len(
+                source_seq_popular_items
+            ),
+            'unpopular_seen_items': len(
+                source_seq_unpopular_seen_items
+            ),
+            'popular_drop_probability': (
+                args.source_seq_popular_drop_probability
+            ),
+            'preserve_recent': (
+                args.source_seq_preserve_recent
+            )
+        }
+
+        print(
+            'Source Sequence Dropout Definition'
+            '---------------------------------------------'
+        )
+        print(source_seq_definition)
+
+        logger.info(
+            'Source Sequence Dropout Definition'
+            '---------------------------------------------'
+        )
+        logger.info(source_seq_definition)
     for epoch_temp in range(epochs):
 
         model_joint.train()
@@ -239,10 +402,128 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
         for j in range(num_batches):
             batch = train_data.sample(n=args.batch_size).to_dict()
             seq = list(batch['seq'].values())
-            target=list(batch['next'].values())
+            # next 完全維持原始資料
+            target = list(batch['next'].values())
+
+            # ================================================
+            # Direction 2:
+            # 只有第一階段 Source training 修改 seq
+            # ================================================
+
+            if pretrain_flag:
+
+                seq, seq_aug_stats = (
+                    source_popular_sequence_dropout(
+                        sequences=seq,
+                        popular_items=(
+                            source_seq_popular_items
+                        ),
+                        drop_probability=(
+                            args.source_seq_popular_drop_probability
+                        ),
+                        preserve_recent=(
+                            args.source_seq_preserve_recent
+                        ),
+                        max_len=args.max_len,
+                        rng=source_seq_rng
+                    )
+                )
+
+                # 只印第一個 epoch 前三個 batch，
+                # 確認 augmentation 是否正常
+                if epoch_temp == 0 and j < 3:
+
+                    popular_before = (
+                        seq_aug_stats[
+                            'popular_tokens_before'
+                        ]
+                    )
+
+                    tail_before = (
+                        seq_aug_stats[
+                            'tail_tokens_before'
+                        ]
+                    )
+
+                    dropped_popular = (
+                        seq_aug_stats[
+                            'dropped_popular_tokens'
+                        ]
+                    )
+
+                    total_before = (
+                        popular_before
+                        + tail_before
+                    )
+
+                    popular_after = (
+                        popular_before
+                        - dropped_popular
+                    )
+
+                    total_after = (
+                        popular_after
+                        + tail_before
+                    )
+
+                    stat_output = {
+                        'batch': j,
+                        'batch_size': (
+                            args.batch_size
+                        ),
+                        'popular_tokens_before': (
+                            popular_before
+                        ),
+                        'tail_tokens_before': (
+                            tail_before
+                        ),
+                        'dropped_popular_tokens': (
+                            dropped_popular
+                        ),
+                        'modified_sequences': (
+                            seq_aug_stats[
+                                'modified_sequences'
+                            ]
+                        ),
+                        'popular_token_ratio_before': (
+                            round(
+                                popular_before
+                                / total_before,
+                                4
+                            )
+                            if total_before > 0
+                            else 0
+                        ),
+                        'popular_token_ratio_after': (
+                            round(
+                                popular_after
+                                / total_after,
+                                4
+                            )
+                            if total_after > 0
+                            else 0
+                        )
+                    }
+
+                    print(
+                        'Source Sequence Augmentation'
+                        '----------------------------------------'
+                    )
+                    print(stat_output)
+
+                    logger.info(
+                        'Source Sequence Augmentation'
+                        '----------------------------------------'
+                    )
+                    logger.info(stat_output)
+
             optimizer.zero_grad()
+
             seq = torch.LongTensor(seq)
-            target = (torch.LongTensor(target)).unsqueeze(1)
+
+            target = (
+                torch.LongTensor(target)
+            ).unsqueeze(1)
             seq = seq.to(device)
             target = target.to(device)
             if pretrain_flag:
@@ -306,7 +587,12 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                 if flag_update >= 3:
                     best_model = copy.deepcopy(model_joint)
                     if pretrain_flag:
-                        torch.save(model_joint.state_dict(), "./saved_model/"+args.s_dataset + "_" + args.t_dataset+"/model.pth")
+                        source_model_path = ("./saved_model/" + args.s_dataset + "_" + args.t_dataset + "/" + args.source_seq_model_name)
+                        torch.save(model_joint.state_dict(), source_model_path)
+                        print(
+                            "Source-seq model saved at:",
+                            source_model_path
+                        )
             if bad_count >= args.patience:
                 break
           
@@ -344,60 +630,70 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
             for k in metric_ks
         }
 
-        popular_items = None
-        unpopular_seen_items = None
-        observed_train_items = None
-        item_counter = None
+         # ========================================================
+        # 建立目前 Domain 的 Popular / Unpopular-seen 集合
+        # ========================================================
 
-        # 只在 target-domain 階段執行 popularity 分析
-        if not pretrain_flag:
-            popular_ratio = getattr(args, 'popular_ratio', 0.2)
+        domain_name = (
+            'Source'
+            if pretrain_flag
+            else 'Target'
+        )
 
-            (
+        # Source 使用 Source-seq 實驗自己的 popular ratio
+        # Target 維持原本 popular_ratio
+        if pretrain_flag:
+            popular_ratio = getattr(
+                args,
+                'source_seq_popular_ratio',
+                0.2
+            )
+        else:
+            popular_ratio = getattr(
+                args,
+                'popular_ratio',
+                0.2
+            )
+
+        (
             popular_items,
             unpopular_seen_items,
             observed_train_items,
             item_counter
-            ) = build_item_popularity_groups(
-                train_data,
-                popular_ratio=popular_ratio
+        ) = build_item_popularity_groups(
+            train_data,
+            popular_ratio=popular_ratio
+        )
+
+        popularity_definition = {
+            'domain': domain_name,
+            'popular_ratio': popular_ratio,
+            'observed_train_items': len(
+                observed_train_items
+            ),
+            'popular_items': len(
+                popular_items
+            ),
+            'unpopular_seen_items': len(
+                unpopular_seen_items
+            ),
+            'unseen_items_in_test': (
+                'calculated from test ground truth'
             )
+        }
 
-            popularity_definition = {
-                'popular_ratio': popular_ratio,
+        print(
+            f'{domain_name} Popularity Definition'
+            '---------------------------------------------'
+        )
+        print(popularity_definition)
 
-                # 訓練集 seq + next 中出現過的商品數
-                'observed_train_items': len(
-                    observed_train_items
-                ),
-
-                # observed items 中的前 20%
-                'popular_items': len(
-                    popular_items
-                ),
-
-                # observed items 中其餘 80%
-                'unpopular_seen_items': len(
-                    unpopular_seen_items
-                ),
-
-                # Unseen 數量要等測試 target 跑完才知道
-                'unseen_items_in_test': (
-                    'calculated from test ground truth'
-                )
-            }
-
-            print(
-                'Popularity Definition'
-                '------------------------------------------------'
-            )
-            print(popularity_definition)
-
-            logger.info(
-                'Popularity Definition'
-                '------------------------------------------------'
-            )
-            logger.info(popularity_definition)
+        logger.info(
+            '%s Popularity Definition'
+            '---------------------------------------------',
+            domain_name
+        )
+        logger.info(popularity_definition)
 
         popular_lookup = None
 
@@ -506,141 +802,159 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                     values.sum().item()
                 )
 
+             # ==================================================
+            # 4. 依目前 Domain 的 test ground truth 分組
             # ==================================================
-            # 4. Target-domain Popular / Unpopular-seen /
-            #    Unseen 分組
-            # ==================================================
-            if not pretrain_flag:
-                target_cpu = (
-                    target.view(-1)
-                    .detach()
-                    .cpu()
-                    .tolist()
+
+            target_cpu = (
+                target.view(-1)
+                .detach()
+                .cpu()
+                .tolist()
+            )
+
+            # Ground truth 是否屬於 Popular
+            popular_mask = torch.tensor(
+                [
+                    int(item) in popular_items
+                    for item in target_cpu
+                ],
+                dtype=torch.bool
+            )
+
+            # Ground truth 是否曾出現在 training seq / next
+            observed_mask = torch.tensor(
+                [
+                    int(item) in observed_train_items
+                    for item in target_cpu
+                ],
+                dtype=torch.bool
+            )
+
+            # 出現過，但不是 Popular
+            unpopular_seen_mask = (
+                observed_mask
+                & ~popular_mask
+            )
+
+            # Training 中完全沒出現過
+            unseen_mask = ~observed_mask
+
+            batch_popular_count = (
+                popular_mask.sum().item()
+            )
+
+            batch_unpopular_seen_count = (
+                unpopular_seen_mask.sum().item()
+            )
+
+            batch_unseen_count = (
+                unseen_mask.sum().item()
+            )
+
+            # 三組應互斥，而且加總等於 batch size
+            batch_group_total = (
+                batch_popular_count
+                + batch_unpopular_seen_count
+                + batch_unseen_count
+            )
+
+            if batch_group_total != current_batch_size:
+                raise RuntimeError(
+                    f"{domain_name} popularity grouping error: "
+                    f"group total={batch_group_total}, "
+                    f"batch size={current_batch_size}"
                 )
 
-                # 是否屬於 training 中的 popular items
-                popular_mask = torch.tensor(
-                    [
-                        int(item) in popular_items
-                        for item in target_cpu
-                    ],
-                    dtype=torch.bool
-                )
+            popular_count += batch_popular_count
 
-                # 是否曾在 training seq 或 next 出現
-                observed_mask = torch.tensor(
-                    [
-                        int(item) in observed_train_items
-                        for item in target_cpu
-                    ],
-                    dtype=torch.bool
-                )
+            unpopular_seen_count += (
+                batch_unpopular_seen_count
+            )
 
-                # Training 中出現過，但不是 popular
-                unpopular_seen_mask = (
-                    observed_mask & ~popular_mask
-                )
+            unseen_count += batch_unseen_count
 
-                # Training seq 與 next 都完全沒出現過
-                unseen_mask = ~observed_mask
+            # ================================================
+            # 累積三組 HR / NDCG
+            # ================================================
 
-                batch_popular_count = (
-                    popular_mask.sum().item()
-                )
+            for metric_name, values in sample_metrics.items():
 
-                batch_unpopular_seen_count = (
-                    unpopular_seen_mask.sum().item()
-                )
-
-                batch_unseen_count = (
-                    unseen_mask.sum().item()
-                )
-
-                # 確認三組互斥且涵蓋整個 batch
-                batch_group_total = (
-                    batch_popular_count
-                    + batch_unpopular_seen_count
-                    + batch_unseen_count
-                )
-
-                if batch_group_total != current_batch_size:
-                    raise RuntimeError(
-                        "Popularity grouping error: "
-                        f"group total={batch_group_total}, "
-                        f"batch size={current_batch_size}"
-                    )
-
-                popular_count += batch_popular_count
-
-                unpopular_seen_count += (
-                    batch_unpopular_seen_count
-                )
-
-                unseen_count += batch_unseen_count
-
-                for metric_name, values in sample_metrics.items():
-                    if batch_popular_count > 0:
-                        popular_metric_sums[
-                            metric_name
-                        ] += (
-                            values[popular_mask]
-                            .sum()
-                            .item()
-                        )
-
-                    if batch_unpopular_seen_count > 0:
-                        unpopular_seen_metric_sums[
-                            metric_name
-                        ] += (
-                            values[unpopular_seen_mask]
-                            .sum()
-                            .item()
-                        )
-
-                    if batch_unseen_count > 0:
-                        unseen_metric_sums[
-                            metric_name
-                        ] += (
-                            values[unseen_mask]
-                            .sum()
-                            .item()
-                        )
-
-                # ========================================
-                # 5. Top-K 推薦清單中的 PopularRatio
-                # ========================================
-                if popular_lookup is None:
-                    popular_lookup = torch.zeros(
-                        scores_rec_diffu.shape[1],
-                        dtype=torch.bool,
-                        device=device
-                    )
-
-                    valid_popular_ids = [
-                        int(item)
-                        for item in popular_items
-                        if 0 <= int(item) < popular_lookup.shape[0]
-                    ]
-
-                    if len(valid_popular_ids) > 0:
-                        popular_lookup[
-                            torch.LongTensor(
-                                valid_popular_ids
-                            ).to(device)
-                        ] = True
-
-                for k in metric_ks:
-                    recommended_items = topk_indices[:, :k]
-
-                    popular_recommend_count[k] += (
-                        popular_lookup[recommended_items]
+                if batch_popular_count > 0:
+                    popular_metric_sums[
+                        metric_name
+                    ] += (
+                        values[popular_mask]
                         .sum()
                         .item()
                     )
 
-                    total_recommend_count[k] += (
-                        current_batch_size * k
+                if batch_unpopular_seen_count > 0:
+                    unpopular_seen_metric_sums[
+                        metric_name
+                    ] += (
+                        values[
+                            unpopular_seen_mask
+                        ]
+                        .sum()
+                        .item()
                     )
+
+                if batch_unseen_count > 0:
+                    unseen_metric_sums[
+                        metric_name
+                    ] += (
+                        values[unseen_mask]
+                        .sum()
+                        .item()
+                    )
+
+            # ==================================================
+            # 5. Top-K Recommendation Popularity
+            # ==================================================
+
+            if popular_lookup is None:
+
+                popular_lookup = torch.zeros(
+                    scores_rec_diffu.shape[1],
+                    dtype=torch.bool,
+                    device=device
+                )
+
+                valid_popular_ids = [
+                    int(item)
+                    for item in popular_items
+                    if (
+                        0 <= int(item)
+                        < popular_lookup.shape[0]
+                    )
+                ]
+
+                if len(valid_popular_ids) > 0:
+
+                    popular_lookup[
+                        torch.LongTensor(
+                            valid_popular_ids
+                        ).to(device)
+                    ] = True
+
+            for k in metric_ks:
+
+                recommended_items = (
+                    topk_indices[:, :k]
+                )
+
+                popular_recommend_count[k] += (
+                    popular_lookup[
+                        recommended_items
+                    ]
+                    .sum()
+                    .item()
+                )
+
+                total_recommend_count[k] += (
+                    current_batch_size * k
+                )
 
         # ============================================
         # 6. 計算最終結果
@@ -651,129 +965,136 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
         )
 
         print(
-            'Test Overall'
+            f'{domain_name} Test Overall'
             '------------------------------------------------------'
         )
         print(test_metrics_dict_mean)
 
         logger.info(
-            'Test Overall'
-            '------------------------------------------------------'
+            '%s Test Overall'
+            '------------------------------------------------------',
+            domain_name
         )
         logger.info(test_metrics_dict_mean)
 
-        if not pretrain_flag:
-            popular_metrics_dict = finalize_metric_sums(
-                popular_metric_sums,
+        # ========================================================
+        # Popular / Tail / Unseen 分組結果
+        # ========================================================
+
+        popular_metrics_dict = finalize_metric_sums(
+            popular_metric_sums,
+            popular_count
+        )
+
+        unpopular_seen_metrics_dict = (
+            finalize_metric_sums(
+                unpopular_seen_metric_sums,
+                unpopular_seen_count
+            )
+        )
+
+        unseen_metrics_dict = finalize_metric_sums(
+            unseen_metric_sums,
+            unseen_count
+        )
+
+        popular_ratio_dict = {
+            f'PopularRatio@{k}': round(
+                popular_recommend_count[k]
+                / total_recommend_count[k]
+                * 100,
+                4
+            )
+            if total_recommend_count[k] > 0
+            else None
+            for k in metric_ks
+        }
+
+        group_size_dict = {
+            'domain': domain_name,
+            'Overall_test_samples': overall_count,
+            'Popular_test_samples': (
                 popular_count
-            )
-
-            unpopular_seen_metrics_dict = (
-                finalize_metric_sums(
-                    unpopular_seen_metric_sums,
-                    unpopular_seen_count
-                )
-            )
-
-            unseen_metrics_dict = finalize_metric_sums(
-                unseen_metric_sums,
+            ),
+            'Unpopular_seen_test_samples': (
+                unpopular_seen_count
+            ),
+            'Unseen_test_samples': (
                 unseen_count
+            ),
+            'Grouped_test_samples': (
+                popular_count
+                + unpopular_seen_count
+                + unseen_count
             )
+        }
 
-            popular_ratio_dict = {
-                f'PopularRatio@{k}': round(
-                    popular_recommend_count[k]
-                    / total_recommend_count[k]
-                    * 100,
-                    4
-                )
-                if total_recommend_count[k] > 0
-                else None
-                for k in metric_ks
-            }
+        print(
+            f'{domain_name} Test Group Size'
+            '----------------------------------------------'
+        )
+        print(group_size_dict)
 
-            group_size_dict = {
-                'Overall_test_samples': overall_count,
+        print(
+            f'{domain_name} Test Popular Ground Truth'
+            '-------------------------------------'
+        )
+        print(popular_metrics_dict)
 
-                'Popular_test_samples': (
-                    popular_count
-                ),
+        print(
+            f'{domain_name} Test Unpopular-Seen Ground Truth'
+            '------------------------------'
+        )
+        print(unpopular_seen_metrics_dict)
 
-                'Unpopular_seen_test_samples': (
-                    unpopular_seen_count
-                ),
+        print(
+            f'{domain_name} Test Unseen Ground Truth'
+            '--------------------------------------'
+        )
+        print(unseen_metrics_dict)
 
-                'Unseen_test_samples': (
-                    unseen_count
-                ),
+        print(
+            f'{domain_name} Recommendation Popularity'
+            '-------------------------------------'
+        )
+        print(popular_ratio_dict)
 
-                # 用來檢查三組加總
-                'Grouped_test_samples': (
-                    popular_count
-                    + unpopular_seen_count
-                    + unseen_count
-                )
-            }
+        logger.info(
+            '%s Test Group Size'
+            '----------------------------------------------',
+            domain_name
+        )
+        logger.info(group_size_dict)
 
-            print(
-                'Test Group Size'
-                '---------------------------------------------------'
-            )
-            print(group_size_dict)
+        logger.info(
+            '%s Test Popular Ground Truth'
+            '-------------------------------------',
+            domain_name
+        )
+        logger.info(popular_metrics_dict)
 
-            print(
-                'Test Popular Ground Truth'
-                '------------------------------------------'
-            )
-            print(popular_metrics_dict)
+        logger.info(
+            '%s Test Unpopular-Seen Ground Truth'
+            '------------------------------',
+            domain_name
+        )
+        logger.info(
+            unpopular_seen_metrics_dict
+        )
 
-            print(
-                'Test Unpopular-Seen Ground Truth'
-                '-----------------------------------'
-            )
-            print(unpopular_seen_metrics_dict)
+        logger.info(
+            '%s Test Unseen Ground Truth'
+            '--------------------------------------',
+            domain_name
+        )
+        logger.info(unseen_metrics_dict)
 
-            print(
-                'Test Unseen Ground Truth'
-                '-------------------------------------------'
-            )
-            print(unseen_metrics_dict)
-
-            print(
-                'Recommendation Popularity'
-                '------------------------------------------'
-            )
-            print(popular_ratio_dict)
-
-            logger.info(
-                'Test Group Size'
-                '---------------------------------------------------'
-            )
-            logger.info(group_size_dict)
-
-            logger.info(
-                'Test Popular Ground Truth'
-                '------------------------------------------'
-            )
-            logger.info(popular_metrics_dict)
-
-            logger.info(
-                'Test Unpopular-Seen Ground Truth'
-                '-----------------------------------'
-            )
-            logger.info(unpopular_seen_metrics_dict)
-
-            logger.info(
-                'Test Unseen Ground Truth'
-                '-------------------------------------------'
-            )
-            logger.info(unseen_metrics_dict)
-
-            logger.info(
-                'Recommendation Popularity'
-                '------------------------------------------'
-            )
-            logger.info(popular_ratio_dict)
+        logger.info(
+            '%s Recommendation Popularity'
+            '-------------------------------------',
+            domain_name
+        )
+        logger.info(popular_ratio_dict)
         
     print('Best Eval---------------------------------------------------------')
     logger.info('Best Eval---------------------------------------------------------')
