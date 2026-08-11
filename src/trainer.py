@@ -133,6 +133,201 @@ def build_item_popularity_groups(
         item_counter
     )
 
+def adaptive_popular_dropout(
+    seq_batch,
+    popular_items,
+    p_max=0.4,
+    min_keep=2
+):
+    """
+    Adaptive Popular Dropout
+
+    對每一筆 sequence：
+    1. 計算 sequence 中 Popular item 的比例
+    2. 根據 Popular ratio 決定該 sample 的 dropout probability
+    3. 只對 Popular item 做 dropout
+    4. Tail item 不動
+    5. 至少保留 min_keep 個有效 interaction
+    """
+
+    if not 0.0 <= p_max <= 1.0:
+        raise ValueError(
+            f"p_max must be between 0 and 1, got {p_max}"
+        )
+
+    augmented_batch = []
+
+    pop_ratios = []
+    drop_probs = []
+
+    total_valid_before = 0
+    total_valid_after = 0
+
+    total_popular_before = 0
+    total_popular_dropped = 0
+
+    for seq in seq_batch:
+
+        # ------------------------------------
+        # 1. 去掉 padding 0
+        # ------------------------------------
+        seq = [int(item) for item in seq]
+
+        valid_seq = [
+            item
+            for item in seq
+            if item != 0
+        ]
+
+        seq_len = len(valid_seq)
+
+        if seq_len == 0:
+            augmented_batch.append(seq)
+            continue
+
+        # ------------------------------------
+        # 2. 找出 Popular item 的位置
+        # ------------------------------------
+        popular_positions = [
+            idx
+            for idx, item in enumerate(valid_seq)
+            if item in popular_items
+        ]
+
+        num_popular = len(popular_positions)
+
+        # ------------------------------------
+        # 3. Sample-level Popular ratio
+        # ------------------------------------
+        seq_pop_ratio = (
+            num_popular / seq_len
+        )
+
+        # ------------------------------------
+        # 4. Adaptive dropout probability
+        #
+        # p_i = p_max * popular_ratio_i
+        # ------------------------------------
+        drop_prob = (
+            p_max * seq_pop_ratio
+        )
+
+        # ------------------------------------
+        # 5. 對 Popular interaction 做 dropout
+        # ------------------------------------
+        selected_drop_positions = []
+
+        for idx in popular_positions:
+
+            if np.random.rand() < drop_prob:
+                selected_drop_positions.append(idx)
+
+        # ------------------------------------
+        # 6. 避免 sequence 被 drop 太多
+        # ------------------------------------
+        max_drop = max(
+            0,
+            seq_len - min_keep
+        )
+
+        if len(selected_drop_positions) > max_drop:
+
+            np.random.shuffle(
+                selected_drop_positions
+            )
+
+            selected_drop_positions = (
+                selected_drop_positions[:max_drop]
+            )
+
+        drop_set = set(
+            selected_drop_positions
+        )
+
+        # ------------------------------------
+        # 7. 保留沒有被 drop 的 interaction
+        # ------------------------------------
+        new_valid_seq = [
+            item
+            for idx, item in enumerate(valid_seq)
+            if idx not in drop_set
+        ]
+
+        # ------------------------------------
+        # 8. 重新 left padding
+        # ------------------------------------
+        new_seq = (
+            [0] * (
+                len(seq) -
+                len(new_valid_seq)
+            )
+            +
+            new_valid_seq
+        )
+
+        augmented_batch.append(
+            new_seq
+        )
+
+        # ------------------------------------
+        # statistics
+        # ------------------------------------
+        pop_ratios.append(
+            seq_pop_ratio
+        )
+
+        drop_probs.append(
+            drop_prob
+        )
+
+        total_valid_before += (
+            seq_len
+        )
+
+        total_valid_after += (
+            len(new_valid_seq)
+        )
+
+        total_popular_before += (
+            num_popular
+        )
+
+        total_popular_dropped += (
+            len(selected_drop_positions)
+        )
+
+    stats = {
+
+        'avg_seq_pop_ratio': (
+            float(np.mean(pop_ratios))
+            if pop_ratios
+            else 0.0
+        ),
+
+        'avg_drop_prob': (
+            float(np.mean(drop_probs))
+            if drop_probs
+            else 0.0
+        ),
+
+        'popular_before': (
+            total_popular_before
+        ),
+
+        'popular_dropped': (
+            total_popular_dropped
+        ),
+
+        'valid_before': (
+            total_valid_before
+        ),
+
+        'valid_after': (
+            total_valid_after
+        )
+    }
+
+    return augmented_batch, stats
 
 def per_sample_metrics(scores, labels, ks):
     """
@@ -230,6 +425,39 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
     best_metrics_dict = {'Best_HR@5': 0, 'Best_NDCG@5': 0, 'Best_HR@10': 0, 'Best_NDCG@10': 0, 'Best_HR@20': 0, 'Best_NDCG@20': 0}
     best_epoch = {'Best_epoch_HR@5': 0, 'Best_epoch_NDCG@5': 0, 'Best_epoch_HR@10': 0, 'Best_epoch_NDCG@10': 0, 'Best_epoch_HR@20': 0, 'Best_epoch_NDCG@20': 0}
     bad_count = 0
+    # =========================================================
+    # Adaptive Popular Dropout:
+    # Stage-1 時 train_data 就是 Source training data
+    # =========================================================
+    source_popular_items = None
+
+    if pretrain_flag and args.adaptive_pop_dropout:
+
+        (
+            source_popular_items,
+            source_unpopular_items,
+            source_observed_items,
+            source_item_counter
+        ) = build_item_popularity_groups(
+            train_data,
+            popular_ratio=args.popular_ratio
+        )
+
+        print(
+            "Adaptive Popular Dropout enabled"
+        )
+
+        print(
+            "Source Popular items:",
+            len(source_popular_items)
+        )
+
+        logger.info(
+            "Adaptive Popular Dropout enabled, "
+            "Source Popular items: {}".format(
+                len(source_popular_items)
+            )
+        )
     num_rows=train_data.shape[0]
     num_batches=int(num_rows/args.batch_size)
     for epoch_temp in range(epochs):
@@ -239,12 +467,39 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
         for j in range(num_batches):
             batch = train_data.sample(n=args.batch_size).to_dict()
             seq = list(batch['seq'].values())
-            target=list(batch['next'].values())
+            target = list(batch['next'].values())
+            # =====================================================
+            # Adaptive Popular Dropout
+            # 只改 Stage-1 Source sequence
+            # =====================================================
+            if pretrain_flag and args.adaptive_pop_dropout:
+                seq, dropout_stats = adaptive_popular_dropout(
+                    seq_batch=seq,
+                    popular_items=source_popular_items,
+                    p_max=args.adaptive_pop_dropout_max,
+                    keep_recent=args.adaptive_pop_keep_recent
+                )
+
+                # 每 50 個 batch 印一次
+                if j % 50 == 0:
+                    print(
+                        "Adaptive Popular Dropout:",
+                        dropout_stats
+                    )
+                    logger.info(
+                        "Adaptive Popular Dropout: {}".format(
+                            dropout_stats
+                        )
+                    )
             optimizer.zero_grad()
             seq = torch.LongTensor(seq)
             target = (torch.LongTensor(target)).unsqueeze(1)
             seq = seq.to(device)
             target = target.to(device)
+
+            # =====================================================
+            # 原本 Target condition sequence 完全不改
+            # =====================================================
             if pretrain_flag:
                 con_batch = con_data.sample(n=args.batch_size).to_dict()
                 con_seq = list(con_batch['seq'].values())
