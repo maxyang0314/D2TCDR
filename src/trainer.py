@@ -440,7 +440,7 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
             source_item_counter
         ) = build_item_popularity_groups(
             train_data,
-            popular_ratio=args.popular_ratio
+            popular_ratio=args.source_popular_ratio
         )
 
         print(
@@ -477,7 +477,7 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                     seq_batch=seq,
                     popular_items=source_popular_items,
                     p_max=args.adaptive_pop_dropout_max,
-                    keep_recent=args.adaptive_pop_keep_recent
+                    min_keep=args.adaptive_pop_min_keep
                 )
 
                 # 每 50 個 batch 印一次
