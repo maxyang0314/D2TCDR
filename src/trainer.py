@@ -133,6 +133,63 @@ def build_item_popularity_groups(
         item_counter
     )
 
+def add_sequence_sampling_weights(
+    train_data,
+    popular_items,
+    alpha=1.0
+):
+    """
+    根據每筆 Source sequence 的 Popular Ratio
+    計算 sampling weight
+
+    weight_i = 1 + alpha * (1 - popular_ratio_i)
+
+    Popular-heavy sequence -> weight 較小
+    Tail-heavy sequence    -> weight 較大
+    """
+
+    train_data = train_data.copy()
+
+    seq_pop_ratios = []
+    sampling_weights = []
+
+    for seq in train_data['seq']:
+
+        valid_seq = [
+            int(item)
+            for item in seq
+            if int(item) != 0
+        ]
+
+        if len(valid_seq) == 0:
+            popular_ratio = 0.0
+        else:
+            num_popular = sum(
+                item in popular_items
+                for item in valid_seq
+            )
+
+            popular_ratio = (
+                num_popular / len(valid_seq)
+            )
+
+        sampling_weight = (
+            1.0
+            + alpha * (1.0 - popular_ratio)
+        )
+
+        seq_pop_ratios.append(
+            popular_ratio
+        )
+
+        sampling_weights.append(
+            sampling_weight
+        )
+
+    train_data['seq_pop_ratio'] = seq_pop_ratios
+    train_data['sampling_weight'] = sampling_weights
+
+    return train_data
 
 def per_sample_metrics(scores, labels, ks):
     """
@@ -230,6 +287,54 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
     best_metrics_dict = {'Best_HR@5': 0, 'Best_NDCG@5': 0, 'Best_HR@10': 0, 'Best_NDCG@10': 0, 'Best_HR@20': 0, 'Best_NDCG@20': 0}
     best_epoch = {'Best_epoch_HR@5': 0, 'Best_epoch_NDCG@5': 0, 'Best_epoch_HR@10': 0, 'Best_epoch_NDCG@10': 0, 'Best_epoch_HR@20': 0, 'Best_epoch_NDCG@20': 0}
     bad_count = 0
+    # ==========================================================
+    # Sequence-level Weighted Sampling
+    # 只作用在 Stage-1 Source training data
+    # ==========================================================
+    source_popular_items = None
+
+    if pretrain_flag:
+
+        (
+            source_popular_items,
+            source_unpopular_items,
+            source_observed_items,
+            source_item_counter
+        ) = build_item_popularity_groups(
+            train_data,
+            popular_ratio=args.source_popular_ratio
+        )
+
+        train_data = add_sequence_sampling_weights(
+            train_data,
+            popular_items=source_popular_items,
+            alpha=args.seq_sampling_alpha
+        )
+
+        print(
+            "Source Sequence-level Weighted Sampling enabled"
+        )
+
+        print(
+            "Average Sequence Popular Ratio:",
+            train_data['seq_pop_ratio'].mean()
+        )
+
+        print(
+            "Average Sampling Weight:",
+            train_data['sampling_weight'].mean()
+        )
+
+        print(
+            "Min Sampling Weight:",
+            train_data['sampling_weight'].min()
+        )
+
+        print(
+            "Max Sampling Weight:",
+            train_data['sampling_weight'].max()
+        )
+
     num_rows=train_data.shape[0]
     num_batches=int(num_rows/args.batch_size)
     for epoch_temp in range(epochs):
@@ -237,9 +342,38 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
         model_joint.train()
         flag_update = 0
         for j in range(num_batches):
-            batch = train_data.sample(n=args.batch_size).to_dict()
+            if pretrain_flag:
+                batch = train_data.sample(n=args.batch_size, weights='sampling_weight').to_dict()
+            else:
+                batch = train_data.sample(n=args.batch_size).to_dict()
             seq = list(batch['seq'].values())
             target=list(batch['next'].values())
+            if pretrain_flag and j % 50 == 0:
+                batch_seq_pop_ratio = np.mean(list(batch['seq_pop_ratio'].values()))
+                batch_targets = list(batch['next'].values())
+                batch_next_pop_ratio = np.mean([
+                    int(item) in source_popular_items
+                    for item in batch_targets
+                ])
+
+                print(
+                    "Sequence Sampling Stats:",
+                    {
+                        'batch_seq_pop_ratio':
+                            round(batch_seq_pop_ratio, 4),
+
+                        'batch_next_pop_ratio':
+                            round(batch_next_pop_ratio, 4)
+                    }
+                )
+
+                logger.info(
+                    "Sequence Sampling Stats: "
+                    "seq_pop_ratio={}, next_pop_ratio={}".format(
+                        round(batch_seq_pop_ratio, 4),
+                        round(batch_next_pop_ratio, 4)
+                    )
+                )
             optimizer.zero_grad()
             seq = torch.LongTensor(seq)
             target = (torch.LongTensor(target)).unsqueeze(1)
