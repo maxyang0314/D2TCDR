@@ -133,6 +133,72 @@ def build_item_popularity_groups(
         item_counter
     )
 
+def build_position_reg_weights(
+    seq_batch,
+    popular_items,
+    beta=0.4
+):
+    """
+    Position-aware Regulation
+
+    Popular interaction:
+        越舊 -> weight 越低
+        越新 -> weight 越接近 1
+
+    Tail interaction:
+        weight = 1
+
+    Padding:
+        weight = 1
+    """
+
+    position_weights = []
+
+    for seq in seq_batch:
+
+        seq_len = len(seq)
+
+        denominator = max(
+            seq_len - 1,
+            1
+        )
+
+        seq_weights = []
+
+        for position, item in enumerate(seq):
+
+            item = int(item)
+
+            # Popular interaction 才調整
+            if (
+                item != 0
+                and item in popular_items
+            ):
+
+                weight = (
+                    1.0
+                    - beta
+                    * (
+                        (seq_len - 1 - position)
+                        / denominator
+                    )
+                )
+
+            else:
+                # Tail / padding 不調整
+                weight = 1.0
+
+            seq_weights.append(
+                weight
+            )
+
+        position_weights.append(
+            seq_weights
+        )
+
+    return torch.FloatTensor(
+        position_weights
+    )
 
 def per_sample_metrics(scores, labels, ks):
     """
@@ -230,6 +296,37 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
     best_metrics_dict = {'Best_HR@5': 0, 'Best_NDCG@5': 0, 'Best_HR@10': 0, 'Best_NDCG@10': 0, 'Best_HR@20': 0, 'Best_NDCG@20': 0}
     best_epoch = {'Best_epoch_HR@5': 0, 'Best_epoch_NDCG@5': 0, 'Best_epoch_HR@10': 0, 'Best_epoch_NDCG@10': 0, 'Best_epoch_HR@20': 0, 'Best_epoch_NDCG@20': 0}
     bad_count = 0
+    # =========================================================
+    # Position-aware Regulation
+    # Stage-1 建立 Source Popular item set
+    # =========================================================
+    source_popular_items = None
+
+    if pretrain_flag:
+
+        (
+            source_popular_items,
+            source_unpopular_items,
+            source_observed_items,
+            source_item_counter
+        ) = build_item_popularity_groups(
+            train_data,
+            popular_ratio=args.source_popular_ratio
+        )
+
+        print(
+            "Position-aware Regulation enabled"
+        )
+
+        print(
+            "Source Popular Items:",
+            len(source_popular_items)
+        )
+
+        print(
+            "Position Regulation Beta:",
+            args.position_reg_beta
+        )
     num_rows=train_data.shape[0]
     num_batches=int(num_rows/args.batch_size)
     for epoch_temp in range(epochs):
@@ -240,6 +337,43 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
             batch = train_data.sample(n=args.batch_size).to_dict()
             seq = list(batch['seq'].values())
             target=list(batch['next'].values())
+            # =====================================================
+            # Position-aware Regulation
+            # 只作用 Stage-1 Source seq
+            # =====================================================
+            position_weights = None
+
+            if pretrain_flag:
+
+                position_weights = (
+                    build_position_reg_weights(
+                        seq_batch=seq,
+                        popular_items=source_popular_items,
+                        beta=args.position_reg_beta
+                    )
+                )
+
+                position_weights = (
+                    position_weights.to(device)
+                )
+
+                if j % 50 == 0:
+
+                    print(
+                        "Position Weight Mean:",
+                        round(
+                            position_weights.mean().item(),
+                            4
+                        )
+                    )
+
+                    print(
+                        "Position Weight Min:",
+                        round(
+                            position_weights.min().item(),
+                            4
+                        )
+                    )
             optimizer.zero_grad()
             seq = torch.LongTensor(seq)
             target = (torch.LongTensor(target)).unsqueeze(1)
@@ -252,7 +386,7 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                 con_seq = con_seq.to(device)
             else:
                 con_seq = None
-            scores, diffu_rep, weights, t, item_rep_dis, seq_rep_dis, em_loss = model_joint(seq, target, con_seq, pretrain_flag, args, epoch_temp, train_flag=True)  
+            scores, diffu_rep, weights, t, item_rep_dis, seq_rep_dis, em_loss = model_joint(seq, target, con_seq, pretrain_flag, args, epoch_temp, train_flag=True, position_weights=position_weights)  
             loss_diffu_value = model_joint.loss_diffu_ce(diffu_rep, target, pretrain_flag)  ## use this not above        
             loss_all = loss_diffu_value + em_loss*args.loss_lambda
             loss_all.backward()

@@ -134,7 +134,7 @@ class Att_Diffuse_model(nn.Module):
         mmd_loss = k_xx+ k_yy - 2 * k_xy
         return mmd_loss
 
-    def forward(self, sequence, tag, con_seq, pretrain_flag, args, epoch, train_flag=True): 
+    def forward(self, sequence, tag, con_seq, pretrain_flag, args, epoch, train_flag=True, position_weights=None): 
         seq_length = sequence.size(1)
         position_ids = torch.arange(seq_length, dtype=torch.long, device=sequence.device)
         position_ids = position_ids.unsqueeze(0).expand_as(sequence)
@@ -145,6 +145,19 @@ class Att_Diffuse_model(nn.Module):
 
         if pretrain_flag:
             item_embeddings = self.souce_embeddings(sequence)
+            # =====================================================
+            # Position-aware Regulation
+            # 只在 Stage-1 training 使用
+            # =====================================================
+            if (
+                train_flag
+                and position_weights is not None
+            ):
+
+                item_embeddings = (
+                    item_embeddings
+                    * position_weights.unsqueeze(-1)
+                )
             item_embeddings = item_embeddings + position_embeddings
             item_shared_embeddings = self.shared_layer(item_embeddings)
             item_specific_embeddings = item_embeddings - item_shared_embeddings

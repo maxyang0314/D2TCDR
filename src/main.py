@@ -34,6 +34,8 @@ parser.add_argument('--decay_step', type=int, default=100, help='Decay step for 
 parser.add_argument('--gamma', type=float, default=0.1, help='Gamma for StepLR')
 parser.add_argument('--metric_ks', nargs='+', type=int, default=[5, 10, 20], help='ks for Metric@k')
 parser.add_argument('--popular_ratio', type=float, default=0.2, help='Top ratio of target-domain training items treated as popular')
+parser.add_argument('--source_popular_ratio', type=float, default=0.2, help='Top ratio of source-domain training items treated as popular')
+parser.add_argument('--position_reg_beta', type=float, default=0.4, help='Strength of position-aware regulation for source popular interactions')
 parser.add_argument('--optimizer', type=str, default='Adam', choices=['SGD', 'Adam'])
 parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
 parser.add_argument('--loss_lambda', type=float, default=1, help='loss weight for diffusion')
