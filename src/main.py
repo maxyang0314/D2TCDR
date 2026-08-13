@@ -36,7 +36,7 @@ parser.add_argument('--metric_ks', nargs='+', type=int, default=[5, 10, 20], hel
 parser.add_argument('--popular_ratio', type=float, default=0.2, help='Top ratio of target-domain training items treated as popular')
 parser.add_argument('--optimizer', type=str, default='Adam', choices=['SGD', 'Adam'])
 parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
-parser.add_argument('--loss_lambda', type=float, default=1, help='loss weight for diffusion')
+parser.add_argument('--loss_lambda', type=float, default=0, help='loss weight for diffusion')
 parser.add_argument('--weight_decay', type=float, default=0, help='L2 regularization')
 parser.add_argument('--momentum', type=float, default=None, help='SGD momentum')
 parser.add_argument('--schedule_sampler_name', type=str, default='lossaware', help='Diffusion for t generation')
