@@ -133,6 +133,511 @@ def build_item_popularity_groups(
         item_counter
     )
 
+def calculate_sequence_popular_ratio(seq, popular_items):
+    """
+    計算一條 sequence 中 Popular item 的比例。
+    Padding 0 不計算。
+    """
+    valid_items = [
+        int(item)
+        for item in seq
+        if int(item) != 0
+    ]
+
+    if len(valid_items) == 0:
+        return 0.0
+
+    popular_count = sum(
+        1
+        for item in valid_items
+        if item in popular_items
+    )
+
+    return popular_count / len(valid_items)
+
+
+def get_shared_sequence_embeddings(
+    model,
+    seq_tensor,
+    is_source
+):
+    """
+    完全按照原本 Stage-1 alignment 的方式取得
+    shared sequence representation：
+
+    item embedding
+        +
+    position embedding
+        ↓
+    shared_layer
+    """
+
+    seq_length = seq_tensor.size(1)
+
+    position_ids = torch.arange(
+        seq_length,
+        dtype=torch.long,
+        device=seq_tensor.device
+    )
+
+    position_ids = (
+        position_ids
+        .unsqueeze(0)
+        .expand_as(seq_tensor)
+    )
+
+    position_embeddings = model.position_embeddings(
+        position_ids
+    )
+
+    if is_source:
+        item_embeddings = model.souce_embeddings(
+            seq_tensor
+        )
+    else:
+        item_embeddings = model.target_embeddings(
+            seq_tensor
+        )
+
+    item_embeddings = (
+        item_embeddings
+        + position_embeddings
+    )
+
+    shared_embeddings = model.shared_layer(
+        item_embeddings
+    )
+
+    return shared_embeddings
+
+
+def popular_tail_mmd_diagnosis(
+    source_train_data,
+    target_train_data,
+    best_model,
+    args,
+    logger,
+    context_threshold=0.5,
+    max_samples=1024
+):
+    """
+    Popular / Tail Cross-domain MMD Diagnosis
+
+    Popular-context:
+        seq Popular Ratio > 0.5
+
+    Tail-context:
+        seq Popular Ratio < 0.5
+
+    ratio == 0.5：
+        視為 balanced，本次不納入 Popular / Tail 比較。
+    """
+
+    print(
+        '\nPopular / Tail MMD Diagnosis'
+        '============================================'
+    )
+
+    logger.info(
+        'Popular / Tail MMD Diagnosis'
+        '============================================'
+    )
+
+    # ============================================
+    # 1. 建立 Source Popular item set
+    # ============================================
+
+    source_popular_ratio = getattr(
+        args,
+        'source_popular_ratio',
+        getattr(args, 'popular_ratio', 0.2)
+    )
+
+    (
+        source_popular_items,
+        _,
+        _,
+        _
+    ) = build_item_popularity_groups(
+        source_train_data,
+        popular_ratio=source_popular_ratio
+    )
+
+    # ============================================
+    # 2. 建立 Target Popular item set
+    # ============================================
+
+    target_popular_ratio = getattr(
+        args,
+        'popular_ratio',
+        0.2
+    )
+
+    (
+        target_popular_items,
+        _,
+        _,
+        _
+    ) = build_item_popularity_groups(
+        target_train_data,
+        popular_ratio=target_popular_ratio
+    )
+
+    # ============================================
+    # 3. 每條 seq 計算 Popular Ratio
+    # ============================================
+
+    source_diag = (
+        source_train_data[['seq']]
+        .copy()
+    )
+
+    target_diag = (
+        target_train_data[['seq']]
+        .copy()
+    )
+
+    source_diag['seq_pop_ratio'] = (
+        source_diag['seq'].apply(
+            lambda seq:
+            calculate_sequence_popular_ratio(
+                seq,
+                source_popular_items
+            )
+        )
+    )
+
+    target_diag['seq_pop_ratio'] = (
+        target_diag['seq'].apply(
+            lambda seq:
+            calculate_sequence_popular_ratio(
+                seq,
+                target_popular_items
+            )
+        )
+    )
+
+    # ============================================
+    # 4. Popular-context / Tail-context 分組
+    # ============================================
+
+    source_pop = source_diag[
+        source_diag['seq_pop_ratio']
+        > context_threshold
+    ]
+
+    source_tail = source_diag[
+        source_diag['seq_pop_ratio']
+        < context_threshold
+    ]
+
+    target_pop = target_diag[
+        target_diag['seq_pop_ratio']
+        > context_threshold
+    ]
+
+    target_tail = target_diag[
+        target_diag['seq_pop_ratio']
+        < context_threshold
+    ]
+
+    source_balanced = source_diag[
+        source_diag['seq_pop_ratio']
+        == context_threshold
+    ]
+
+    target_balanced = target_diag[
+        target_diag['seq_pop_ratio']
+        == context_threshold
+    ]
+
+    group_size = {
+        'Source Popular-context': len(source_pop),
+        'Source Tail-context': len(source_tail),
+        'Source Balanced': len(source_balanced),
+
+        'Target Popular-context': len(target_pop),
+        'Target Tail-context': len(target_tail),
+        'Target Balanced': len(target_balanced)
+    }
+
+    print('MMD Group Size--------------------------------')
+    print(group_size)
+
+    logger.info(
+        'MMD Group Size--------------------------------'
+    )
+    logger.info(group_size)
+
+    # ============================================
+    # 5. 印出各組平均 Popular Ratio
+    # ============================================
+
+    group_ratio = {
+        'Source Popular-context AvgRatio':
+            round(
+                source_pop[
+                    'seq_pop_ratio'
+                ].mean(),
+                4
+            ),
+
+        'Source Tail-context AvgRatio':
+            round(
+                source_tail[
+                    'seq_pop_ratio'
+                ].mean(),
+                4
+            ),
+
+        'Target Popular-context AvgRatio':
+            round(
+                target_pop[
+                    'seq_pop_ratio'
+                ].mean(),
+                4
+            ),
+
+        'Target Tail-context AvgRatio':
+            round(
+                target_tail[
+                    'seq_pop_ratio'
+                ].mean(),
+                4
+            )
+    }
+
+    print('MMD Group Popular Ratio-----------------------')
+    print(group_ratio)
+
+    logger.info(
+        'MMD Group Popular Ratio-----------------------'
+    )
+    logger.info(group_ratio)
+
+    # ============================================
+    # 6. 四組使用相同 sample size
+    # ============================================
+
+    sample_size = min(
+        max_samples,
+        len(source_pop),
+        len(source_tail),
+        len(target_pop),
+        len(target_tail)
+    )
+
+    if sample_size == 0:
+        raise RuntimeError(
+            'MMD diagnosis group has zero samples.'
+        )
+
+    print(
+        'MMD diagnosis sample size:',
+        sample_size
+    )
+
+    # 固定 random_state，確保 diagnosis 可重現
+    source_pop_sample = source_pop.sample(
+        n=sample_size,
+        random_state=args.random_seed
+    )
+
+    source_tail_sample = source_tail.sample(
+        n=sample_size,
+        random_state=args.random_seed
+    )
+
+    target_pop_sample = target_pop.sample(
+        n=sample_size,
+        random_state=args.random_seed
+    )
+
+    target_tail_sample = target_tail.sample(
+        n=sample_size,
+        random_state=args.random_seed
+    )
+
+    # Global MMD 也使用相同 sample size
+    source_global_sample = source_diag.sample(
+        n=sample_size,
+        random_state=args.random_seed
+    )
+
+    target_global_sample = target_diag.sample(
+        n=sample_size,
+        random_state=args.random_seed
+    )
+
+    # ============================================
+    # 7. DataFrame → Tensor
+    # ============================================
+
+    device = args.device
+
+    def dataframe_to_seq_tensor(df):
+        return torch.LongTensor(
+            df['seq'].tolist()
+        ).to(device)
+
+    s_pop_seq = dataframe_to_seq_tensor(
+        source_pop_sample
+    )
+
+    s_tail_seq = dataframe_to_seq_tensor(
+        source_tail_sample
+    )
+
+    t_pop_seq = dataframe_to_seq_tensor(
+        target_pop_sample
+    )
+
+    t_tail_seq = dataframe_to_seq_tensor(
+        target_tail_sample
+    )
+
+    s_global_seq = dataframe_to_seq_tensor(
+        source_global_sample
+    )
+
+    t_global_seq = dataframe_to_seq_tensor(
+        target_global_sample
+    )
+
+    # ============================================
+    # 8. 如果使用 DataParallel，取真正 model
+    # ============================================
+
+    if isinstance(best_model, nn.DataParallel):
+        model_core = best_model.module
+    else:
+        model_core = best_model
+
+    model_core.eval()
+
+    # ============================================
+    # 9. 取得 shared representations
+    # ============================================
+
+    with torch.no_grad():
+
+        s_pop_rep = get_shared_sequence_embeddings(
+            model_core,
+            s_pop_seq,
+            is_source=True
+        )
+
+        s_tail_rep = get_shared_sequence_embeddings(
+            model_core,
+            s_tail_seq,
+            is_source=True
+        )
+
+        t_pop_rep = get_shared_sequence_embeddings(
+            model_core,
+            t_pop_seq,
+            is_source=False
+        )
+
+        t_tail_rep = get_shared_sequence_embeddings(
+            model_core,
+            t_tail_seq,
+            is_source=False
+        )
+
+        s_global_rep = get_shared_sequence_embeddings(
+            model_core,
+            s_global_seq,
+            is_source=True
+        )
+
+        t_global_rep = get_shared_sequence_embeddings(
+            model_core,
+            t_global_seq,
+            is_source=False
+        )
+
+        # ========================================
+        # 10. 計算 MMD
+        # ========================================
+
+        global_mmd = model_core.mmd_loss(
+            s_global_rep,
+            t_global_rep
+        ).item()
+
+        popular_mmd = model_core.mmd_loss(
+            s_pop_rep,
+            t_pop_rep
+        ).item()
+
+        tail_mmd = model_core.mmd_loss(
+            s_tail_rep,
+            t_tail_rep
+        ).item()
+
+        source_pop_target_tail_mmd = (
+            model_core.mmd_loss(
+                s_pop_rep,
+                t_tail_rep
+            ).item()
+        )
+
+        source_tail_target_pop_mmd = (
+            model_core.mmd_loss(
+                s_tail_rep,
+                t_pop_rep
+            ).item()
+        )
+
+    # ============================================
+    # 11. 整理結果
+    # ============================================
+
+    result = {
+        'Global_MMD':
+            round(global_mmd, 6),
+
+        'Popular_to_Popular_MMD':
+            round(popular_mmd, 6),
+
+        'Tail_to_Tail_MMD':
+            round(tail_mmd, 6),
+
+        'SourcePopular_to_TargetTail_MMD':
+            round(
+                source_pop_target_tail_mmd,
+                6
+            ),
+
+        'SourceTail_to_TargetPopular_MMD':
+            round(
+                source_tail_target_pop_mmd,
+                6
+            ),
+
+        'Tail_minus_Popular_MMD':
+            round(
+                tail_mmd - popular_mmd,
+                6
+            )
+    }
+
+    print(
+        'Cross-domain Shared Representation MMD'
+        '--------------------'
+    )
+
+    print(result)
+
+    logger.info(
+        'Cross-domain Shared Representation MMD'
+        '--------------------'
+    )
+
+    logger.info(result)
+
+    return result
 
 def per_sample_metrics(scores, labels, ks):
     """
@@ -831,10 +1336,28 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
         )
         logger.info(popular_ratio_dict)
         
+    # ============================================================
+    # Popular / Tail MMD Diagnosis
+    # 只在 Stage-1 Source pretraining 完成後執行
+    # ============================================================
+    if pretrain_flag:
+        popular_tail_mmd_diagnosis(
+            source_train_data=train_data,
+            target_train_data=con_data,
+            best_model=best_model,
+            args=args,
+            logger=logger,
+            context_threshold=0.5,
+            max_samples=1024
+        )
+
+
     print('Best Eval---------------------------------------------------------')
     logger.info('Best Eval---------------------------------------------------------')
+
     print(best_metrics_dict)
     print(best_epoch)
+
     logger.info(best_metrics_dict)
     logger.info(best_epoch)
 
