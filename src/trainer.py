@@ -133,6 +133,73 @@ def build_item_popularity_groups(
         item_counter
     )
 
+def calculate_sequence_popular_ratio(
+    seq,
+    popular_items
+):
+    """
+    計算一條 sequence 中 Popular interaction 的比例。
+    Padding 0 不計算。
+    """
+
+    valid_items = [
+        int(item)
+        for item in seq
+        if int(item) != 0
+    ]
+
+    if len(valid_items) == 0:
+        return 0.0
+
+    popular_count = sum(
+        1
+        for item in valid_items
+        if item in popular_items
+    )
+
+    return popular_count / len(valid_items)
+
+
+def build_context_group_masks(
+    seq_batch,
+    popular_items,
+    threshold,
+    device
+):
+    """
+    Popular Ratio > threshold  → Popular-context
+    Popular Ratio < threshold  → Tail-context
+    Popular Ratio == threshold → Balanced，不放入 group MMD
+    """
+
+    ratios = []
+
+    for seq in seq_batch:
+        ratio = calculate_sequence_popular_ratio(
+            seq,
+            popular_items
+        )
+        ratios.append(ratio)
+
+    ratio_tensor = torch.tensor(
+        ratios,
+        dtype=torch.float32,
+        device=device
+    )
+
+    popular_mask = (
+        ratio_tensor > threshold
+    )
+
+    tail_mask = (
+        ratio_tensor < threshold
+    )
+
+    return (
+        popular_mask,
+        tail_mask,
+        ratio_tensor
+    )
 
 def per_sample_metrics(scores, labels, ks):
     """
@@ -232,27 +299,184 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
     bad_count = 0
     num_rows=train_data.shape[0]
     num_batches=int(num_rows/args.batch_size)
+    # ============================================================
+    # Experiment E：Group-aware Alignment
+    # ============================================================
+
+    source_popular_items = None
+    target_popular_items = None
+
+    if (
+        pretrain_flag
+        and args.group_alignment == 1
+    ):
+
+        (
+            source_popular_items,
+            _,
+            _,
+            _
+        ) = build_item_popularity_groups(
+            train_data,
+            popular_ratio=args.popular_ratio
+        )
+
+        (
+            target_popular_items,
+            _,
+            _,
+            _
+        ) = build_item_popularity_groups(
+            con_data,
+            popular_ratio=args.popular_ratio
+        )
+
+        group_alignment_info = {
+            'group_alignment': True,
+            'context_threshold':
+                args.group_context_threshold,
+            'popular_weight':
+                args.group_pop_weight,
+            'tail_weight':
+                args.group_tail_weight,
+            'source_popular_items':
+                len(source_popular_items),
+            'target_popular_items':
+                len(target_popular_items)
+        }
+
+        print(
+            'Group-aware Alignment Definition'
+            '------------------------------------'
+        )
+        print(group_alignment_info)
+
+        logger.info(
+            'Group-aware Alignment Definition'
+            '------------------------------------'
+        )
+        logger.info(group_alignment_info)
     for epoch_temp in range(epochs):
 
         model_joint.train()
         flag_update = 0
         for j in range(num_batches):
-            batch = train_data.sample(n=args.batch_size).to_dict()
-            seq = list(batch['seq'].values())
-            target=list(batch['next'].values())
+            # ========================================================
+            # Source batch：維持原本 uniform random sampling
+            # ========================================================
+            batch_df = train_data.sample(n=args.batch_size)
+            seq_list = batch_df['seq'].tolist()
+            target_list = batch_df['next'].tolist()
             optimizer.zero_grad()
-            seq = torch.LongTensor(seq)
-            target = (torch.LongTensor(target)).unsqueeze(1)
-            seq = seq.to(device)
-            target = target.to(device)
+            seq = torch.LongTensor(seq_list).to(device)
+            target = (torch.LongTensor(target_list).unsqueeze(1).to(device))
+
+            # ========================================================
+            # Target condition：
+            # 維持原本 uniform random sampling
+            # ========================================================
+
             if pretrain_flag:
-                con_batch = con_data.sample(n=args.batch_size).to_dict()
-                con_seq = list(con_batch['seq'].values())
-                con_seq = torch.LongTensor(con_seq)
-                con_seq = con_seq.to(device)
+
+                con_batch_df = con_data.sample(n=args.batch_size)
+                con_seq_list = con_batch_df['seq'].tolist()
+                con_seq = torch.LongTensor(con_seq_list).to(device)
+
+                # ====================================================
+                # Experiment E：
+                # 建立 Source / Target Popular/Tail context masks
+                # ====================================================
+
+                if args.group_alignment == 1:
+
+                    (
+                        source_pop_mask,
+                        source_tail_mask,
+                        source_context_ratios
+                    ) = build_context_group_masks(
+                        seq_list,
+                        source_popular_items,
+                        args.group_context_threshold,
+                        device
+                    )
+
+                    (
+                        target_pop_mask,
+                        target_tail_mask,
+                        target_context_ratios
+                    ) = build_context_group_masks(
+                        con_seq_list,
+                        target_popular_items,
+                        args.group_context_threshold,
+                        device
+                    )
+                else:
+                    source_pop_mask = None
+                    source_tail_mask = None
+                    target_pop_mask = None
+                    target_tail_mask = None
             else:
                 con_seq = None
-            scores, diffu_rep, weights, t, item_rep_dis, seq_rep_dis, em_loss = model_joint(seq, target, con_seq, pretrain_flag, args, epoch_temp, train_flag=True)  
+                source_pop_mask = None
+                source_tail_mask = None
+                target_pop_mask = None
+                target_tail_mask = None
+            if (
+                pretrain_flag
+                and args.group_alignment == 1
+                and j == 0
+            ):
+
+                group_batch_stats = {
+                    'Epoch':
+                        epoch_temp,
+
+                    'Source Popular-context':
+                        int(
+                            source_pop_mask
+                            .sum()
+                            .item()
+                        ),
+
+                    'Source Tail-context':
+                        int(
+                            source_tail_mask
+                            .sum()
+                            .item()
+                        ),
+
+                    'Target Popular-context':
+                        int(
+                            target_pop_mask
+                            .sum()
+                            .item()
+                        ),
+
+                    'Target Tail-context':
+                        int(
+                            target_tail_mask
+                            .sum()
+                            .item()
+                        )
+                }
+
+                print(
+                    'Group-aware Alignment Batch'
+                    '------------------------------------'
+                )
+
+                print(group_batch_stats)
+
+                logger.info(
+                    'Group-aware Alignment Batch'
+                    '------------------------------------'
+                )
+
+                logger.info(
+                    group_batch_stats
+                )
+            scores, diffu_rep, weights, t, item_rep_dis, seq_rep_dis, em_loss = model_joint(seq, target, con_seq, pretrain_flag, args, epoch_temp, train_flag=True,
+            source_pop_mask=source_pop_mask, source_tail_mask=source_tail_mask, target_pop_mask=target_pop_mask, target_tail_mask=target_tail_mask)  
             loss_diffu_value = model_joint.loss_diffu_ce(diffu_rep, target, pretrain_flag)  ## use this not above        
             loss_all = loss_diffu_value + em_loss*args.loss_lambda
             loss_all.backward()
