@@ -133,6 +133,84 @@ def build_item_popularity_groups(
         item_counter
     )
 
+def calculate_sequence_popular_ratio(
+    seq,
+    popular_items
+):
+    """
+    計算 sequence 中 Popular interaction 的比例。
+    Padding 0 不計算。
+    """
+
+    valid_items = [
+        int(item)
+        for item in seq
+        if int(item) != 0
+    ]
+
+    if len(valid_items) == 0:
+        return 0.0
+
+    popular_count = sum(
+        1
+        for item in valid_items
+        if item in popular_items
+    )
+
+    return (
+        popular_count
+        / len(valid_items)
+    )
+
+
+def add_target_condition_sampling_weights(
+    con_data,
+    popular_items,
+    alpha=1.0
+):
+    """
+    Popularity-aware Target Condition Sampling
+
+    w_i = 1 + alpha * (1 - r_i)
+
+    r_i：
+        Target con_seq 中 Popular interaction 的比例。
+
+    Popular-heavy：
+        sampling weight 較低
+
+    Tail-heavy：
+        sampling weight 較高
+    """
+
+    con_data = con_data.copy()
+
+    con_data[
+        'con_seq_pop_ratio'
+    ] = con_data[
+        'seq'
+    ].apply(
+        lambda seq:
+        calculate_sequence_popular_ratio(
+            seq,
+            popular_items
+        )
+    )
+
+    con_data[
+        'alignment_sampling_weight'
+    ] = (
+        1.0
+        + alpha
+        * (
+            1.0
+            - con_data[
+                'con_seq_pop_ratio'
+            ]
+        )
+    )
+
+    return con_data
 
 def per_sample_metrics(scores, labels, ks):
     """
@@ -232,10 +310,105 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
     bad_count = 0
     num_rows=train_data.shape[0]
     num_batches=int(num_rows/args.batch_size)
+    # ============================================================
+    # Experiment C:
+    # Popularity-aware Target Condition Sampling
+    # 只作用在 Stage-1
+    # ============================================================
+
+    alignment_con_data = con_data
+
+    if pretrain_flag:
+
+        (
+            target_popular_items,
+            _,
+            _,
+            _
+        ) = build_item_popularity_groups(
+            con_data,
+            popular_ratio=args.popular_ratio
+        )
+
+        alignment_con_data = (
+            add_target_condition_sampling_weights(
+                con_data,
+                target_popular_items,
+                alpha=args.target_condition_sampling_alpha
+            )
+        )
+
+        # --------------------------------------------------------
+        # 印出原始 Target condition distribution
+        # --------------------------------------------------------
+
+        ratios = alignment_con_data[
+            'con_seq_pop_ratio'
+        ]
+
+        popular_context_count = (
+            ratios > 0.5
+        ).sum()
+
+        tail_context_count = (
+            ratios < 0.5
+        ).sum()
+
+        balanced_context_count = (
+            ratios == 0.5
+        ).sum()
+
+        sampling_info = {
+            'alpha':
+                args.target_condition_sampling_alpha,
+
+            'Total Target Condition':
+                len(alignment_con_data),
+
+            'Popular-context':
+                int(popular_context_count),
+
+            'Tail-context':
+                int(tail_context_count),
+
+            'Balanced-context':
+                int(balanced_context_count),
+
+            'Avg Seq Popular Ratio':
+                round(
+                    ratios.mean(),
+                    4
+                ),
+
+            'Avg Sampling Weight':
+                round(
+                    alignment_con_data[
+                        'alignment_sampling_weight'
+                    ].mean(),
+                    4
+                )
+        }
+
+        print(
+            'Target Condition Sampling Definition'
+            '-------------------------------------'
+        )
+        print(sampling_info)
+
+        logger.info(
+            'Target Condition Sampling Definition'
+            '-------------------------------------'
+        )
+        logger.info(sampling_info)
     for epoch_temp in range(epochs):
 
         model_joint.train()
         flag_update = 0
+        epoch_con_total = 0
+        epoch_con_pop_context = 0
+        epoch_con_tail_context = 0
+        epoch_con_balanced_context = 0
+        epoch_con_pop_ratio_sum = 0.0
         for j in range(num_batches):
             batch = train_data.sample(n=args.batch_size).to_dict()
             seq = list(batch['seq'].values())
@@ -246,18 +419,83 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
             seq = seq.to(device)
             target = target.to(device)
             if pretrain_flag:
-                con_batch = con_data.sample(n=args.batch_size).to_dict()
-                con_seq = list(con_batch['seq'].values())
+                con_batch_df = (alignment_con_data.sample(n=args.batch_size,weights='alignment_sampling_weight'))
+                con_seq = (con_batch_df['seq'].tolist())
                 con_seq = torch.LongTensor(con_seq)
                 con_seq = con_seq.to(device)
             else:
                 con_seq = None
+            if pretrain_flag:
+                batch_ratios = (con_batch_df['con_seq_pop_ratio'].to_numpy())
+                epoch_con_total += len(batch_ratios)
+                epoch_con_pop_context += (batch_ratios > 0.5).sum()
+                epoch_con_tail_context += (batch_ratios < 0.5).sum()
+                epoch_con_balanced_context += (batch_ratios == 0.5).sum()
+                epoch_con_pop_ratio_sum += (batch_ratios.sum())
             scores, diffu_rep, weights, t, item_rep_dis, seq_rep_dis, em_loss = model_joint(seq, target, con_seq, pretrain_flag, args, epoch_temp, train_flag=True)  
             loss_diffu_value = model_joint.loss_diffu_ce(diffu_rep, target, pretrain_flag)  ## use this not above        
             loss_all = loss_diffu_value + em_loss*args.loss_lambda
             loss_all.backward()
         
             optimizer.step()
+            if (
+                pretrain_flag
+                and epoch_con_total > 0
+            ):
+
+                epoch_sampling_stats = {
+                    'Epoch':
+                        epoch_temp,
+
+                    'Avg Batch Seq Popular Ratio':
+                        round(
+                            epoch_con_pop_ratio_sum
+                            / epoch_con_total,
+                            4
+                        ),
+
+                    'Popular-context %':
+                        round(
+                            epoch_con_pop_context
+                            / epoch_con_total
+                            * 100,
+                            2
+                        ),
+
+                    'Tail-context %':
+                        round(
+                            epoch_con_tail_context
+                            / epoch_con_total
+                            * 100,
+                            2
+                        ),
+
+                    'Balanced-context %':
+                        round(
+                            epoch_con_balanced_context
+                            / epoch_con_total
+                            * 100,
+                            2
+                        )
+                }
+
+                print(
+                    'Target Condition Batch Composition'
+                    '--------------------------------'
+                )
+
+                print(
+                    epoch_sampling_stats
+                )
+
+                logger.info(
+                    'Target Condition Batch Composition'
+                    '--------------------------------'
+                )
+
+                logger.info(
+                    epoch_sampling_stats
+                )
         print('Epoch: {}'.format(epoch_temp))
         logger.info('Epoch: {}'.format(epoch_temp))
         lr_scheduler.step()
