@@ -53,12 +53,41 @@ class Att_Diffuse_model(nn.Module):
         return self.loss_ce(scores, labels.squeeze(-1))
 
 
-    def loss_diffu_ce(self, rep_diffu, labels, pretrain_flag):
+    def loss_diffu_ce(self, rep_diffu, labels, pretrain_flag, sample_weights=None):
+
+        # ========================================================
+        # 計算 recommendation scores
+        # ========================================================
         if pretrain_flag:
             scores = torch.matmul(rep_diffu, self.shared_layer(self.souce_embeddings.weight).t())
         else:
             scores = torch.matmul(rep_diffu, self.target_embeddings.weight.t())
-        return self.loss_ce(scores, labels.squeeze(-1))
+        labels_flat = labels.squeeze(-1)
+
+        # ========================================================
+        # Original D2TCDR
+        # Stage-1 或沒有提供 sample weight 時完全不變
+        # ========================================================
+
+        if sample_weights is None:
+            return self.loss_ce(scores, labels_flat)
+
+        # ========================================================
+        # Target Next Frequency-aware Reweighting
+        # ========================================================
+
+        per_sample_loss = self.loss_ce_rec(scores, labels_flat)
+        sample_weights = (sample_weights.view(-1).to(per_sample_loss.device))
+
+        # --------------------------------------------------------
+        # Batch normalization：
+        # 保持平均 weight = 1
+        # 避免整體 loss scale 改變
+        # --------------------------------------------------------
+
+        normalized_weights = (sample_weights/ sample_weights.mean().clamp_min(1e-8))
+        weighted_loss = (per_sample_loss* normalized_weights).mean()
+        return weighted_loss
 
     def diffu_rep_pre(self, rep_diffu, pretrain_flag):
         if pretrain_flag:
