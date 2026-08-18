@@ -830,7 +830,213 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
             domain_name
         )
         logger.info(popular_ratio_dict)
-        
+    # ============================================================
+    # Bias Amplification Analysis
+    # Only for Target-domain evaluation
+    # ============================================================
+    if not pretrain_flag:
+
+        # Target-only baseline
+        # Same dataset / split / popular definition / seed
+        target_only_baseline = {
+            'Overall': {
+                'HR@5': 34.1440,
+                'NDCG@5': 25.1840,
+                'HR@10': 45.1362,
+                'NDCG@10': 28.7093,
+                'HR@20': 59.3872,
+                'NDCG@20': 32.2991
+            },
+
+            'Popular': {
+                'HR@5': 49.1983,
+                'NDCG@5': 36.7260,
+                'HR@10': 63.1195,
+                'NDCG@10': 41.1976,
+                'HR@20': 78.7172,
+                'NDCG@20': 45.1155
+            },
+
+            'Unpopular_seen': {
+                'HR@5': 5.3465,
+                'NDCG@5': 2.7530,
+                'HR@10': 11.8812,
+                'NDCG@10': 4.8335,
+                'HR@20': 27.1287,
+                'NDCG@20': 8.7062
+            },
+
+            'PopularRatio': {
+                'PopularRatio@5': 73.5700,
+                'PopularRatio@10': 62.3249,
+                'PopularRatio@20': 50.5666
+            }
+        }
+
+        print("\n")
+        print("=" * 70)
+        print("BIAS AMPLIFICATION ANALYSIS")
+        print("Reference: Target-only Baseline")
+        print("=" * 70)
+
+        # ========================================================
+        # 1. Overall performance gain
+        # ========================================================
+        print("\n[1] Overall Performance Gain")
+        print("-" * 70)
+
+        for k in metric_ks:
+
+            for metric_type in ['HR', 'NDCG']:
+
+                metric_name = f'{metric_type}@{k}'
+
+                baseline_value = (
+                    target_only_baseline['Overall'][metric_name]
+                )
+
+                current_value = (
+                    test_metrics_dict_mean[metric_name]
+                )
+
+                absolute_gain = (
+                    current_value - baseline_value
+                )
+
+                relative_gain = (
+                    absolute_gain / baseline_value * 100
+                )
+
+                print(
+                    f'{metric_name}: '
+                    f'Target-only={baseline_value:.4f}, '
+                    f'D2TCDR={current_value:.4f}, '
+                    f'Δ={absolute_gain:+.4f}, '
+                    f'RI={relative_gain:+.2f}%'
+                )
+
+        # ========================================================
+        # 2. Popular vs Unpopular transfer benefit
+        # ========================================================
+        print("\n[2] Popular vs Unpopular Transfer Benefit")
+        print("-" * 70)
+
+        for k in metric_ks:
+
+            print(f"\n@{k}")
+
+            for metric_type in ['HR', 'NDCG']:
+
+                metric_name = f'{metric_type}@{k}'
+
+                # Target-only
+                base_pop = (
+                    target_only_baseline['Popular'][metric_name]
+                )
+
+                base_tail = (
+                    target_only_baseline['Unpopular_seen'][metric_name]
+                )
+
+                # Full D2TCDR
+                current_pop = (
+                    popular_metrics_dict[metric_name]
+                )
+
+                current_tail = (
+                    unpopular_seen_metrics_dict[metric_name]
+                )
+
+                # Absolute improvement
+                delta_pop = current_pop - base_pop
+                delta_tail = current_tail - base_tail
+
+                # Relative improvement
+                ri_pop = (
+                    delta_pop / base_pop * 100
+                )
+
+                ri_tail = (
+                    delta_tail / base_tail * 100
+                )
+
+                # Primary Bias Amplification Indicator
+                transfer_benefit_gap = (
+                    ri_pop - ri_tail
+                )
+
+                # Original Popular-Tail gap
+                baseline_gap = (
+                    base_pop - base_tail
+                )
+
+                current_gap = (
+                    current_pop - current_tail
+                )
+
+                gap_change = (
+                    current_gap - baseline_gap
+                )
+
+                print(f'{metric_name}')
+
+                print(
+                    f'  Popular: '
+                    f'{base_pop:.4f} -> {current_pop:.4f} '
+                    f'| Δ={delta_pop:+.4f} '
+                    f'| RI={ri_pop:+.2f}%'
+                )
+
+                print(
+                    f'  Unpopular: '
+                    f'{base_tail:.4f} -> {current_tail:.4f} '
+                    f'| Δ={delta_tail:+.4f} '
+                    f'| RI={ri_tail:+.2f}%'
+                )
+
+                print(
+                    f'  Transfer Benefit Gap '
+                    f'(RI_Pop - RI_Tail) = '
+                    f'{transfer_benefit_gap:+.2f}%'
+                )
+
+                print(
+                    f'  Popular-Tail Gap: '
+                    f'{baseline_gap:.4f} -> '
+                    f'{current_gap:.4f} '
+                    f'| ΔGap={gap_change:+.4f}'
+                )
+
+        # ========================================================
+        # 3. Recommendation Popularity change
+        # ========================================================
+        print("\n[3] Recommendation Popularity Change")
+        print("-" * 70)
+
+        for k in metric_ks:
+
+            metric_name = f'PopularRatio@{k}'
+
+            baseline_ratio = (
+                target_only_baseline['PopularRatio'][metric_name]
+            )
+
+            current_ratio = (
+                popular_ratio_dict[metric_name]
+            )
+
+            ratio_change = (
+                current_ratio - baseline_ratio
+            )
+
+            print(
+                f'{metric_name}: '
+                f'{baseline_ratio:.4f}% -> '
+                f'{current_ratio:.4f}% '
+                f'| Δ={ratio_change:+.4f} percentage points'
+            )
+
+        print("=" * 70)
     print('Best Eval---------------------------------------------------------')
     logger.info('Best Eval---------------------------------------------------------')
     print(best_metrics_dict)
