@@ -85,7 +85,7 @@ class Att_Diffuse_model(nn.Module):
 
     def embedding_loss(self, item_shared_embeddings, con_shared_embeddings, 
                     item_specific_embeddings, con_specific_embeddings, 
-                    lambda_shared=200.0, lambda_private=0.2, lambda_orthogonal=20):
+                    lambda_shared=0.0, lambda_private=0.2, lambda_orthogonal=20):
        
         item_orthogonal_loss = torch.mean(F.cosine_similarity(item_shared_embeddings, item_specific_embeddings, dim=-1) ** 2)
         con_orthogonal_loss = torch.mean(F.cosine_similarity(con_shared_embeddings, con_specific_embeddings, dim=-1) ** 2)
