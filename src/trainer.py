@@ -333,6 +333,7 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
 
         group_alignment_info = {
             'group_alignment': True,
+            'alignment_mode': args.group_alignment_mode,
             'context_threshold':
                 args.group_context_threshold,
             'popular_weight':

@@ -38,6 +38,7 @@ parser.add_argument('--group_alignment', type=int, default=1, choices=[0, 1], he
 parser.add_argument('--group_context_threshold', type=float, default=0.5, help='Threshold for Popular/Tail sequence context')
 parser.add_argument('--group_pop_weight', type=float, default=1.0, help='Weight for Popular-to-Popular MMD')
 parser.add_argument('--group_tail_weight', type=float, default=1.0, help='Weight for Tail-to-Tail MMD')
+parser.add_argument('--group_alignment_mode', type=str, default='both', choices=['both', 'popular_only', 'tail_only'], help='Which popularity group is used for shared alignment')
 parser.add_argument('--optimizer', type=str, default='Adam', choices=['SGD', 'Adam'])
 parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
 parser.add_argument('--loss_lambda', type=float, default=1, help='loss weight for diffusion')

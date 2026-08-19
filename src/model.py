@@ -96,6 +96,7 @@ class Att_Diffuse_model(nn.Module):
         target_tail_mask=None,
 
         group_alignment=False,
+        group_alignment_mode='both',
         group_pop_weight=1.0,
         group_tail_weight=1.0,
 
@@ -150,7 +151,9 @@ class Att_Diffuse_model(nn.Module):
             # ----------------------------------------------------
 
             if (
-                source_pop_mask.any().item()
+                group_alignment_mode in ['both', 'popular_only']
+                and group_pop_weight > 0
+                and source_pop_mask.any().item()
                 and target_pop_mask.any().item()
             ):
 
@@ -179,7 +182,9 @@ class Att_Diffuse_model(nn.Module):
             # ----------------------------------------------------
 
             if (
-                source_tail_mask.any().item()
+                group_alignment_mode in ['both', 'tail_only']
+                and group_tail_weight > 0
+                and source_tail_mask.any().item()
                 and target_tail_mask.any().item()
             ):
 
@@ -225,12 +230,22 @@ class Att_Diffuse_model(nn.Module):
 
             else:
 
-                # 萬一特殊 batch 沒有可用 group
-                # fallback 到原始 Global MMD
-                loss_mmd_shared = self.mmd_loss(
-                    item_shared_embeddings,
-                    con_shared_embeddings
-                )
+                # 原本 Group-aware 維持舊設定
+                if group_alignment_mode == 'both':
+
+                    loss_mmd_shared = self.mmd_loss(
+                        item_shared_embeddings,
+                        con_shared_embeddings
+                    )
+
+                # Popular-only / Tail-only：
+                # 該 batch 沒有所指定的 group，就不做 shared alignment
+                else:
+
+                    loss_mmd_shared = (
+                        item_shared_embeddings.sum()
+                        * 0.0
+                    )
 
         else:
 
@@ -332,7 +347,7 @@ class Att_Diffuse_model(nn.Module):
                 con_specific_embeddings = con_embeddings - con_shared_embeddings
                 em_loss = self.embedding_loss(item_shared_embeddings, con_shared_embeddings, item_specific_embeddings, con_specific_embeddings, source_pop_mask=source_pop_mask,
                     source_tail_mask=source_tail_mask, target_pop_mask=target_pop_mask, target_tail_mask=target_tail_mask,
-                    group_alignment=(args.group_alignment == 1), group_pop_weight=args.group_pop_weight, group_tail_weight=args.group_tail_weight)
+                    group_alignment=(args.group_alignment == 1), group_alignment_mode=args.group_alignment_mode, group_pop_weight=args.group_pop_weight, group_tail_weight=args.group_tail_weight)
         else:
             item_embeddings = self.target_embeddings(sequence)
             item_embeddings = item_embeddings + position_embeddings
