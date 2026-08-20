@@ -34,6 +34,8 @@ parser.add_argument('--decay_step', type=int, default=100, help='Decay step for 
 parser.add_argument('--gamma', type=float, default=0.1, help='Gamma for StepLR')
 parser.add_argument('--metric_ks', nargs='+', type=int, default=[5, 10, 20], help='ks for Metric@k')
 parser.add_argument('--popular_ratio', type=float, default=0.2, help='Top ratio of target-domain training items treated as popular')
+parser.add_argument('--target_next_rule_reweight', type=int, default=1, choices=[0, 1], help='Enable sample-wise Target Next regulation')
+parser.add_argument('--target_next_reweight_alpha', type=float, default=0.25, help='Reweight strength for Unpopular Target next items')
 parser.add_argument('--group_alignment', type=int, default=1, choices=[0, 1], help='Use Popular/Tail group-aware shared alignment')
 parser.add_argument('--group_context_threshold', type=float, default=0.5, help='Threshold for Popular/Tail sequence context')
 parser.add_argument('--group_pop_weight', type=float, default=1.0, help='Weight for Popular-to-Popular MMD')

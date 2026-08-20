@@ -133,6 +133,64 @@ def build_item_popularity_groups(
         item_counter
     )
 
+def build_samplewise_target_next_weights(
+    train_data,
+    popular_items,
+    alpha=1.0
+):
+    """
+    D1: Sample-wise Target Next Regulation
+
+    Popular next:
+        raw weight = 1.0
+
+    Unpopular next:
+        使用 frequency-aware strength
+    """
+
+    next_counter = Counter(
+        int(item)
+        for item in train_data['next']
+        if int(item) != 0
+    )
+
+    if len(next_counter) == 0:
+        raise ValueError(
+            "No valid Target next items found."
+        )
+
+    max_freq = max(next_counter.values())
+    log_max_freq = np.log1p(max_freq)
+
+    weight_map = {}
+
+    for item, freq in next_counter.items():
+
+        # -------------------------------
+        # Popular Next → Normal
+        # -------------------------------
+        if item in popular_items:
+            weight_map[item] = 1.0
+            continue
+
+        # -------------------------------
+        # Unpopular Next → Reweight
+        # -------------------------------
+        normalized_freq = (
+            np.log1p(freq)
+            / log_max_freq
+        )
+
+        weight = (
+            1.0
+            + alpha
+            * (1.0 - normalized_freq)
+        )
+
+        weight_map[item] = float(weight)
+
+    return weight_map, next_counter
+
 def calculate_sequence_popular_ratio(
     seq,
     popular_items
@@ -300,6 +358,89 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
     num_rows=train_data.shape[0]
     num_batches=int(num_rows/args.batch_size)
     # ============================================================
+    # D1: Sample-wise Target Next Regulation
+    # 只作用於 Stage-2 Target training
+    # ============================================================
+
+    target_next_weight_map = None
+    target_next_counter = None
+    stage2_target_popular_items = None
+    stage2_target_unpopular_items = None
+
+    if (
+        not pretrain_flag
+        and args.target_next_rule_reweight == 1
+    ):
+
+        (
+            stage2_target_popular_items,
+            stage2_target_unpopular_items,
+            _,
+            _
+        ) = build_item_popularity_groups(
+            train_data,
+            popular_ratio=args.popular_ratio
+        )
+
+        (
+            target_next_weight_map,
+            target_next_counter
+        ) = build_samplewise_target_next_weights(
+            train_data=train_data,
+            popular_items=stage2_target_popular_items,
+            alpha=args.target_next_reweight_alpha
+        )
+
+        # --------------------------------------------
+        # Diagnostic statistics
+        # --------------------------------------------
+
+        popular_next_count = sum(
+            1
+            for item in train_data['next']
+            if int(item) in stage2_target_popular_items
+        )
+
+        unpopular_next_count = sum(
+            1
+            for item in train_data['next']
+            if int(item) in stage2_target_unpopular_items
+        )
+
+        unpopular_weights = [
+            target_next_weight_map[item]
+            for item in target_next_weight_map
+            if item in stage2_target_unpopular_items
+        ]
+
+        rule_info = {
+            'D1': 'Sample-wise Target Next Regulation',
+            'Popular Next Action': 'Normal',
+            'Unpopular Next Action': 'Reweight',
+            'Popular Next Samples':
+                popular_next_count,
+            'Unpopular Next Samples':
+                unpopular_next_count,
+            'Alpha':
+                args.target_next_reweight_alpha,
+            'Mean Unpopular Raw Weight':
+                round(
+                    float(np.mean(unpopular_weights)),
+                    4
+                )
+        }
+
+        print(
+            'D1 Sample-wise Target Next Regulation'
+            '---------------------------------------------'
+        )
+        print(rule_info)
+
+        logger.info(
+            'D1 Sample-wise Target Next Regulation'
+        )
+        logger.info(rule_info)
+    # ============================================================
     # Experiment E：Group-aware Alignment
     # ============================================================
 
@@ -368,6 +509,26 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
             batch_df = train_data.sample(n=args.batch_size)
             seq_list = batch_df['seq'].tolist()
             target_list = batch_df['next'].tolist()
+            # ========================================================
+            # D1 Sample-wise Target Next Action
+            # ========================================================
+
+            if (
+                not pretrain_flag
+                and args.target_next_rule_reweight == 1
+            ):
+
+                target_next_weights = torch.tensor(
+                    [
+                        target_next_weight_map[int(item)]
+                        for item in target_list
+                    ],
+                    dtype=torch.float32,
+                    device=device
+                )
+
+            else:
+                target_next_weights = None
             optimizer.zero_grad()
             seq = torch.LongTensor(seq_list).to(device)
             target = (torch.LongTensor(target_list).unsqueeze(1).to(device))
@@ -478,7 +639,7 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                 )
             scores, diffu_rep, weights, t, item_rep_dis, seq_rep_dis, em_loss = model_joint(seq, target, con_seq, pretrain_flag, args, epoch_temp, train_flag=True,
             source_pop_mask=source_pop_mask, source_tail_mask=source_tail_mask, target_pop_mask=target_pop_mask, target_tail_mask=target_tail_mask)  
-            loss_diffu_value = model_joint.loss_diffu_ce(diffu_rep, target, pretrain_flag)  ## use this not above        
+            loss_diffu_value = model_joint.loss_diffu_ce(diffu_rep, target, pretrain_flag, sample_weights=target_next_weights)  ## use this not above        
             loss_all = loss_diffu_value + em_loss*args.loss_lambda
             loss_all.backward()
         
@@ -1055,139 +1216,6 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
             domain_name
         )
         logger.info(popular_ratio_dict)
-    if not pretrain_flag:
-
-        target_only_baseline = {
-            'Overall': {
-                'HR@5': 34.1440,
-                'NDCG@5': 25.1840,
-                'HR@10': 45.1362,
-                'NDCG@10': 28.7093,
-                'HR@20': 59.3872,
-                'NDCG@20': 32.2991
-            },
-
-            'Popular': {
-                'HR@5': 49.1983,
-                'NDCG@5': 36.7260,
-                'HR@10': 63.1195,
-                'NDCG@10': 41.1976,
-                'HR@20': 78.7172,
-                'NDCG@20': 45.1155
-            },
-
-            'Unpopular_seen': {
-                'HR@5': 5.3465,
-                'NDCG@5': 2.7530,
-                'HR@10': 11.8812,
-                'NDCG@10': 4.8335,
-                'HR@20': 27.1287,
-                'NDCG@20': 8.7062
-            },
-
-            'PopularRatio': {
-                'PopularRatio@5': 73.5700,
-                'PopularRatio@10': 62.3249,
-                'PopularRatio@20': 50.5666
-            }
-        }
-
-        print("\n")
-        print("=" * 70)
-        print("GROUP-AWARE ALIGNMENT: BIAS AMPLIFICATION ANALYSIS")
-        print("Reference: Target-only Baseline")
-        print("=" * 70)
-
-        for k in metric_ks:
-
-            print(f"\n@{k}")
-
-            for metric_type in ['HR', 'NDCG']:
-
-                metric_name = f'{metric_type}@{k}'
-
-                base_pop = target_only_baseline[
-                    'Popular'
-                ][metric_name]
-
-                base_tail = target_only_baseline[
-                    'Unpopular_seen'
-                ][metric_name]
-
-                current_pop = popular_metrics_dict[
-                    metric_name
-                ]
-
-                current_tail = unpopular_seen_metrics_dict[
-                    metric_name
-                ]
-
-                # Absolute transfer benefit
-                delta_pop = current_pop - base_pop
-                delta_tail = current_tail - base_tail
-
-                # Relative transfer benefit
-                ri_pop = (
-                    delta_pop / base_pop * 100
-                )
-
-                ri_tail = (
-                    delta_tail / base_tail * 100
-                )
-
-                # Bias Amplification Indicator
-                transfer_benefit_gap = (
-                    ri_pop - ri_tail
-                )
-
-                print(f'{metric_name}')
-
-                print(
-                    f'  Popular: '
-                    f'{base_pop:.4f} -> {current_pop:.4f} '
-                    f'| Δ={delta_pop:+.4f} '
-                    f'| RI={ri_pop:+.2f}%'
-                )
-
-                print(
-                    f'  Unpopular: '
-                    f'{base_tail:.4f} -> {current_tail:.4f} '
-                    f'| Δ={delta_tail:+.4f} '
-                    f'| RI={ri_tail:+.2f}%'
-                )
-
-                print(
-                    f'  Transfer Benefit Gap = '
-                    f'{transfer_benefit_gap:+.2f}%'
-                )
-
-        print("\n[Recommendation Popularity]")
-
-        for k in metric_ks:
-
-            metric_name = f'PopularRatio@{k}'
-
-            baseline_ratio = target_only_baseline[
-                'PopularRatio'
-            ][metric_name]
-
-            current_ratio = popular_ratio_dict[
-                metric_name
-            ]
-
-            ratio_change = (
-                current_ratio - baseline_ratio
-            )
-
-            print(
-                f'{metric_name}: '
-                f'{baseline_ratio:.4f}% -> '
-                f'{current_ratio:.4f}% '
-                f'| Δ={ratio_change:+.4f} pp'
-            )
-
-        print("=" * 70)
-
 
     print('Best Eval---------------------------------------------------------')
     logger.info('Best Eval---------------------------------------------------------')
