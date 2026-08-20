@@ -710,29 +710,6 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
             d2_setup
         )
 
-    if (
-        not pretrain_flag
-        and args.tail_context_regulation == 1
-        and epoch_temp == 0
-        and j < 3
-    ):
-
-        print(
-            'D2 Context Regulation Batch Check'
-            '---------------------------------------------'
-        )
-
-        print(
-            d2_batch_stats
-        )
-
-        logger.info(
-            'D2 Context Regulation Batch Check'
-        )
-
-        logger.info(
-            d2_batch_stats
-        )
     for epoch_temp in range(epochs):
 
         model_joint.train()
@@ -789,6 +766,30 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                         augmentation_seed
                 )
 
+                # ========================================================
+                # D2 Batch Check
+                # 只顯示第一個 epoch 的前三個 batch
+                # ========================================================
+
+                if (
+                    not pretrain_flag
+                    and args.tail_context_regulation == 1
+                    and epoch_temp == 0
+                    and j < 3
+                ):
+
+                    print(
+                        'D2 Context Regulation Batch Check'
+                        '---------------------------------------------'
+                    )
+
+                    print(d2_batch_stats)
+
+                    logger.info(
+                        'D2 Context Regulation Batch Check'
+                    )
+
+                    logger.info(d2_batch_stats)
             seq_list = (
                 batch_df['seq'].tolist()
             )
