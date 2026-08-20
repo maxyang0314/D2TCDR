@@ -134,6 +134,74 @@ def build_item_popularity_groups(
         item_counter
     )
 
+def build_samplewise_target_next_weights(
+    train_data,
+    popular_items,
+    alpha=1.0
+):
+    """
+    D1: Sample-wise Target Next Regulation
+
+    Popular Next:
+        weight = 1.0
+
+    Unpopular Next:
+        frequency-aware reweighting
+    """
+
+    next_counter = Counter(
+        int(item)
+        for item in train_data['next']
+        if int(item) != 0
+    )
+
+    if len(next_counter) == 0:
+        raise ValueError(
+            "No valid Target next items found."
+        )
+
+    max_freq = max(
+        next_counter.values()
+    )
+
+    log_max_freq = np.log1p(
+        max_freq
+    )
+
+    weight_map = {}
+
+    for item, freq in next_counter.items():
+
+        # Popular Next -> Normal
+        if item in popular_items:
+
+            weight_map[item] = 1.0
+            continue
+
+        # Unpopular Next -> Frequency-aware Reweight
+        normalized_freq = (
+            np.log1p(freq)
+            / log_max_freq
+        )
+
+        weight = (
+            1.0
+            + alpha
+            * (
+                1.0
+                - normalized_freq
+            )
+        )
+
+        weight_map[item] = float(
+            weight
+        )
+
+    return (
+        weight_map,
+        next_counter
+    )
+
 def calculate_sequence_popular_ratio(
     seq,
     popular_items
@@ -638,6 +706,107 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
         logger.info(group_alignment_info)
 
     # ============================================================
+    # D1: Sample-wise Target Next Regulation
+    # Only used in Stage-2 Target training
+    # ============================================================
+
+    target_next_weight_map = None
+    target_next_counter = None
+
+    stage2_target_popular_items = None
+    stage2_target_unpopular_items = None
+
+    if (
+        not pretrain_flag
+        and args.target_next_rule_reweight == 1
+    ):
+
+        (
+            stage2_target_popular_items,
+            stage2_target_unpopular_items,
+            _,
+            _
+        ) = build_item_popularity_groups(
+            train_data,
+            popular_ratio=args.popular_ratio
+        )
+
+        (
+            target_next_weight_map,
+            target_next_counter
+        ) = build_samplewise_target_next_weights(
+            train_data=train_data,
+            popular_items=stage2_target_popular_items,
+            alpha=args.target_next_reweight_alpha
+        )
+
+        # --------------------------------------------
+        # Diagnostic statistics
+        # --------------------------------------------
+
+        popular_next_count = sum(
+            1
+            for item in train_data['next']
+            if int(item) in stage2_target_popular_items
+        )
+
+        unpopular_next_count = sum(
+            1
+            for item in train_data['next']
+            if int(item) in stage2_target_unpopular_items
+        )
+
+        unpopular_weights = [
+            target_next_weight_map[item]
+            for item in target_next_weight_map
+            if item in stage2_target_unpopular_items
+        ]
+
+        rule_info = {
+            'D1':
+                'Sample-wise Target Next Regulation',
+
+            'Popular Next Action':
+                'Normal',
+
+            'Unpopular Next Action':
+                'Reweight',
+
+            'Popular Next Samples':
+                popular_next_count,
+
+            'Unpopular Next Samples':
+                unpopular_next_count,
+
+            'Alpha':
+                args.target_next_reweight_alpha,
+
+            'Mean Unpopular Raw Weight':
+                round(
+                    float(
+                        np.mean(
+                            unpopular_weights
+                        )
+                    ),
+                    4
+                )
+        }
+
+        print(
+            'D1 Sample-wise Target Next Regulation'
+            '---------------------------------------------'
+        )
+
+        print(rule_info)
+
+        logger.info(
+            'D1 Sample-wise Target Next Regulation'
+        )
+
+        logger.info(
+            rule_info
+        )
+    # ============================================================
     # D2: Tail-target Context Regulation
     # Only used in Stage-2 Target training
     # ============================================================
@@ -797,6 +966,88 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
             target_list = (
                 batch_df['next'].tolist()
             )
+            # ========================================================
+            # D1: Sample-wise Target Next Supervision Regulation
+            # ========================================================
+
+            if (
+                not pretrain_flag
+                and args.target_next_rule_reweight == 1
+            ):
+
+                target_next_weights = torch.tensor(
+                    [
+                        target_next_weight_map[
+                            int(item)
+                        ]
+                        for item in target_list
+                    ],
+                    dtype=torch.float32,
+                    device=device
+                )
+
+            else:
+                target_next_weights = None
+            if (
+                not pretrain_flag
+                and epoch_temp == 0
+                and j < 3
+            ):
+
+                c_batch_stats = {
+
+                    'D1_alpha':
+                        args.target_next_reweight_alpha,
+
+                    'D1_mean_weight':
+                        round(
+                            float(
+                                target_next_weights
+                                .mean()
+                                .item()
+                            ),
+                            4
+                        )
+                        if target_next_weights is not None
+                        else 1.0,
+
+                    'D1_max_weight':
+                        round(
+                            float(
+                                target_next_weights
+                                .max()
+                                .item()
+                            ),
+                            4
+                        )
+                        if target_next_weights is not None
+                        else 1.0,
+
+                    'D2_eligible':
+                        (
+                            d2_batch_stats[
+                                'eligible_popcontext_unpopnext'
+                            ]
+                            if d2_batch_stats is not None
+                            else 0
+                        ),
+
+                    'D2_augmented':
+                        (
+                            d2_batch_stats[
+                                'augmented_samples'
+                            ]
+                            if d2_batch_stats is not None
+                            else 0
+                        )
+                }
+
+                print(
+                    'Experiment C Batch Check'
+                    '---------------------------------------------'
+                )
+
+                print(c_batch_stats)
             optimizer.zero_grad()
             seq = torch.LongTensor(seq_list).to(device)
             target = (torch.LongTensor(target_list).unsqueeze(1).to(device))
@@ -907,7 +1158,7 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                 )
             scores, diffu_rep, weights, t, item_rep_dis, seq_rep_dis, em_loss = model_joint(seq, target, con_seq, pretrain_flag, args, epoch_temp, train_flag=True,
             source_pop_mask=source_pop_mask, source_tail_mask=source_tail_mask, target_pop_mask=target_pop_mask, target_tail_mask=target_tail_mask)  
-            loss_diffu_value = model_joint.loss_diffu_ce(diffu_rep, target, pretrain_flag)  ## use this not above        
+            loss_diffu_value = model_joint.loss_diffu_ce(diffu_rep, target, pretrain_flag, sample_weights=target_next_weights)  ## use this not above        
             loss_all = loss_diffu_value + em_loss*args.loss_lambda
             loss_all.backward()
         

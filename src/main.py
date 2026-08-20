@@ -43,6 +43,8 @@ parser.add_argument('--tail_context_regulation', type=int, default=1, choices=[0
 parser.add_argument('--tail_aug_probability', type=float, default=0.5, help='Probability of applying context dropout to an eligible sample')
 parser.add_argument('--tail_drop_probability', type=float, default=0.2, help='Probability of dropping each older interaction')
 parser.add_argument('--tail_preserve_recent', type=int, default=2, help='Number of recent interactions always preserved')
+parser.add_argument('--target_next_rule_reweight', type=int, default=1, choices=[0, 1], help='Enable sample-wise Target next reweighting')
+parser.add_argument('--target_next_reweight_alpha', type=float, default=0.25, help='Reweight strength for Unpopular Target next items')
 parser.add_argument('--optimizer', type=str, default='Adam', choices=['SGD', 'Adam'])
 parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
 parser.add_argument('--loss_lambda', type=float, default=1, help='loss weight for diffusion')

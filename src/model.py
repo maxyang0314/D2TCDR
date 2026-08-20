@@ -53,12 +53,33 @@ class Att_Diffuse_model(nn.Module):
         return self.loss_ce(scores, labels.squeeze(-1))
 
 
-    def loss_diffu_ce(self, rep_diffu, labels, pretrain_flag):
+    def loss_diffu_ce(self, rep_diffu, labels, pretrain_flag, sample_weights=None):
         if pretrain_flag:
             scores = torch.matmul(rep_diffu, self.shared_layer(self.souce_embeddings.weight).t())
         else:
             scores = torch.matmul(rep_diffu, self.target_embeddings.weight.t())
-        return self.loss_ce(scores, labels.squeeze(-1))
+        labels_flat = labels.squeeze(-1)
+
+        # ============================================
+        # Original D2TCDR
+        # Stage-1 或 D1 沒啟用時
+        # ============================================
+        if sample_weights is None:
+            return self.loss_ce(scores, labels_flat)
+        # ============================================
+        # D1 Sample-wise weighted CE
+        # ============================================
+        per_sample_loss = self.loss_ce_rec(scores, labels_flat)
+        sample_weights = (sample_weights.view(-1).to(per_sample_loss.device))
+        # 所有 sample 原始 supervision 都保留
+        base_loss = (per_sample_loss.mean())
+        # Popular = 1
+        # Unpopular > 1
+        # 只取額外增加的 supervision
+        extra_weights = (sample_weights - 1.0).clamp_min(0.0)
+        extra_loss = (per_sample_loss * extra_weights).mean()
+        weighted_loss = (base_loss + extra_loss)
+        return weighted_loss
 
     def diffu_rep_pre(self, rep_diffu, pretrain_flag):
         if pretrain_flag:
