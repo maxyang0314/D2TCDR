@@ -5,6 +5,7 @@ import torch
 import numpy as np
 import copy
 import time
+import random
 
 from collections import Counter
 
@@ -159,6 +160,284 @@ def calculate_sequence_popular_ratio(
 
     return popular_count / len(valid_items)
 
+def pad_or_truncate_sequence(seq, max_len):
+    """
+    移除 padding 0，
+    保留最近 max_len 個 interaction，
+    最後重新 left padding。
+    """
+
+    real_items = [
+        int(item)
+        for item in seq
+        if int(item) != 0
+    ]
+
+    real_items = real_items[-max_len:]
+
+    return (
+        [0] * (max_len - len(real_items))
+        + real_items
+    )
+
+def dropout_older_context(
+    seq,
+    max_len,
+    drop_probability,
+    preserve_recent,
+    rng
+):
+    """
+    只對較早的歷史 context 做 dropout。
+
+    - 不修改 next
+    - 不改 interaction order
+    - 最近 preserve_recent 個 interaction 一定保留
+    """
+
+    if not 0.0 <= drop_probability <= 1.0:
+        raise ValueError(
+            'tail_drop_probability must be between 0 and 1.'
+        )
+
+    if preserve_recent < 1:
+        raise ValueError(
+            'tail_preserve_recent must be at least 1.'
+        )
+
+    real_items = [
+        int(item)
+        for item in seq
+        if int(item) != 0
+    ]
+
+    # 沒有足夠的較早 context 可以刪
+    if len(real_items) <= preserve_recent:
+        return pad_or_truncate_sequence(
+            real_items,
+            max_len
+        )
+
+    older_items = (
+        real_items[:-preserve_recent]
+    )
+
+    recent_items = (
+        real_items[-preserve_recent:]
+    )
+
+    # 只 dropout 較早 interaction
+    kept_older_items = [
+        item
+        for item in older_items
+        if rng.random() >= drop_probability
+    ]
+
+    augmented_items = (
+        kept_older_items
+        + recent_items
+    )
+
+    return pad_or_truncate_sequence(
+        augmented_items,
+        max_len
+    )
+
+def rule_based_tail_context_regulation(
+    batch_df,
+    popular_items,
+    unpopular_seen_items,
+    context_threshold,
+    max_len,
+    augmentation_probability,
+    drop_probability,
+    preserve_recent,
+    random_seed
+):
+    """
+    D2: Rule-based Tail-target Context Regulation
+
+    State:
+        S1 = Sequence Popularity
+        S2 = Next-item Popularity
+
+    Rule:
+        Next = Unpopular
+        AND
+        Sequence Popular Ratio > context_threshold
+            -> eligible for context dropout
+
+        otherwise
+            -> keep original sequence
+    """
+
+    if not 0.0 <= augmentation_probability <= 1.0:
+        raise ValueError(
+            'tail_aug_probability must be between 0 and 1.'
+        )
+
+    batch_df = (
+        batch_df
+        .copy()
+        .reset_index(drop=True)
+    )
+
+    rng = random.Random(
+        random_seed
+    )
+
+    # -------------------------------
+    # Statistics
+    # -------------------------------
+
+    unpopular_next_samples = 0
+    eligible_samples = 0
+    augmented_samples = 0
+
+    dropped_item_count = 0
+
+    eligible_pop_ratio_sum = 0.0
+
+    for row_index in batch_df.index:
+
+        target_item = int(
+            batch_df.at[
+                row_index,
+                'next'
+            ]
+        )
+
+        # ========================================
+        # S2: Next-item Popularity
+        #
+        # Popular Next -> Normal
+        # ========================================
+
+        if target_item not in unpopular_seen_items:
+            continue
+
+        unpopular_next_samples += 1
+
+        original_seq = list(
+            batch_df.at[
+                row_index,
+                'seq'
+            ]
+        )
+
+        # ========================================
+        # S1: Sequence Popularity
+        # ========================================
+
+        seq_pop_ratio = (
+            calculate_sequence_popular_ratio(
+                original_seq,
+                popular_items
+            )
+        )
+
+        # ========================================
+        # Rule:
+        #
+        # Unpopular Next
+        # + Popular-context
+        # ========================================
+
+        if seq_pop_ratio <= context_threshold:
+            continue
+
+        eligible_samples += 1
+        eligible_pop_ratio_sum += (
+            seq_pop_ratio
+        )
+
+        # 並非所有 eligible sample 都做 augmentation
+        if rng.random() >= augmentation_probability:
+            continue
+
+        original_real_length = sum(
+            int(item) != 0
+            for item in original_seq
+        )
+
+        augmented_seq = (
+            dropout_older_context(
+                seq=original_seq,
+                max_len=max_len,
+                drop_probability=drop_probability,
+                preserve_recent=preserve_recent,
+                rng=rng
+            )
+        )
+
+        augmented_real_length = sum(
+            int(item) != 0
+            for item in augmented_seq
+        )
+
+        batch_df.at[
+            row_index,
+            'seq'
+        ] = augmented_seq
+
+        if 'len_seq' in batch_df.columns:
+
+            batch_df.at[
+                row_index,
+                'len_seq'
+            ] = augmented_real_length
+
+        augmented_samples += 1
+
+        dropped_item_count += max(
+            0,
+            original_real_length
+            - augmented_real_length
+        )
+
+    stats = {
+
+        'batch_size':
+            len(batch_df),
+
+        'unpopular_next_samples':
+            unpopular_next_samples,
+
+        'eligible_popcontext_unpopnext':
+            eligible_samples,
+
+        'augmented_samples':
+            augmented_samples,
+
+        'eligible_ratio':
+            round(
+                eligible_samples
+                / max(len(batch_df), 1),
+                4
+            ),
+
+        'augmentation_ratio_among_eligible':
+            round(
+                augmented_samples
+                / max(eligible_samples, 1),
+                4
+            ),
+
+        'avg_eligible_sequence_pop_ratio':
+            round(
+                eligible_pop_ratio_sum
+                / max(eligible_samples, 1),
+                4
+            ),
+
+        'dropped_items':
+            dropped_item_count
+    }
+
+    return (
+        batch_df,
+        stats
+    )
 
 def build_context_group_masks(
     seq_batch,
@@ -357,17 +636,166 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
             '------------------------------------'
         )
         logger.info(group_alignment_info)
+
+    # ============================================================
+    # D2: Tail-target Context Regulation
+    # Only used in Stage-2 Target training
+    # ============================================================
+
+    d2_target_popular_items = None
+    d2_target_unpopular_items = None
+
+    if (
+        not pretrain_flag
+        and args.tail_context_regulation == 1
+    ):
+
+        (
+            d2_target_popular_items,
+            d2_target_unpopular_items,
+            _,
+            _
+        ) = build_item_popularity_groups(
+            train_data,
+            popular_ratio=args.popular_ratio
+        )
+
+        d2_setup = {
+
+            'D2':
+                'Tail-target Context Regulation',
+
+            'State_1':
+                'Sequence Popularity',
+
+            'State_2':
+                'Next-item Popularity',
+
+            'Rule':
+                (
+                    'Unpopular Next + '
+                    f'SeqPopRatio > '
+                    f'{args.group_context_threshold}'
+                    ' -> Context Dropout'
+                ),
+
+            'augmentation_probability':
+                args.tail_aug_probability,
+
+            'drop_probability':
+                args.tail_drop_probability,
+
+            'preserve_recent':
+                args.tail_preserve_recent,
+
+            'popular_items':
+                len(d2_target_popular_items),
+
+            'unpopular_seen_items':
+                len(d2_target_unpopular_items)
+        }
+
+        print(
+            'D2 Tail-target Context Regulation'
+            '---------------------------------------------'
+        )
+
+        print(d2_setup)
+
+        logger.info(
+            'D2 Tail-target Context Regulation'
+        )
+
+        logger.info(
+            d2_setup
+        )
+
+    if (
+        not pretrain_flag
+        and args.tail_context_regulation == 1
+        and epoch_temp == 0
+        and j < 3
+    ):
+
+        print(
+            'D2 Context Regulation Batch Check'
+            '---------------------------------------------'
+        )
+
+        print(
+            d2_batch_stats
+        )
+
+        logger.info(
+            'D2 Context Regulation Batch Check'
+        )
+
+        logger.info(
+            d2_batch_stats
+        )
     for epoch_temp in range(epochs):
 
         model_joint.train()
         flag_update = 0
         for j in range(num_batches):
+            batch_df = train_data.sample(n=args.batch_size).copy()
+            d2_batch_stats = None
+
             # ========================================================
-            # Source batch：維持原本 uniform random sampling
+            # D2 only applies to Stage-2 Target training
             # ========================================================
-            batch_df = train_data.sample(n=args.batch_size)
-            seq_list = batch_df['seq'].tolist()
-            target_list = batch_df['next'].tolist()
+
+            if (
+                not pretrain_flag
+                and args.tail_context_regulation == 1
+            ):
+
+                augmentation_seed = (
+                    args.random_seed
+                    + epoch_temp * num_batches
+                    + j
+                    + 100000
+                )
+
+                (
+                    batch_df,
+                    d2_batch_stats
+                ) = rule_based_tail_context_regulation(
+
+                    batch_df=batch_df,
+
+                    popular_items=
+                        d2_target_popular_items,
+
+                    unpopular_seen_items=
+                        d2_target_unpopular_items,
+
+                    context_threshold=
+                        args.group_context_threshold,
+
+                    max_len=
+                        args.max_len,
+
+                    augmentation_probability=
+                        args.tail_aug_probability,
+
+                    drop_probability=
+                        args.tail_drop_probability,
+
+                    preserve_recent=
+                        args.tail_preserve_recent,
+
+                    random_seed=
+                        augmentation_seed
+                )
+
+            seq_list = (
+                batch_df['seq'].tolist()
+            )
+
+            target_list = (
+                batch_df['next'].tolist()
+            )
             optimizer.zero_grad()
             seq = torch.LongTensor(seq_list).to(device)
             target = (torch.LongTensor(target_list).unsqueeze(1).to(device))
@@ -1055,139 +1483,6 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
             domain_name
         )
         logger.info(popular_ratio_dict)
-    if not pretrain_flag:
-
-        target_only_baseline = {
-            'Overall': {
-                'HR@5': 34.1440,
-                'NDCG@5': 25.1840,
-                'HR@10': 45.1362,
-                'NDCG@10': 28.7093,
-                'HR@20': 59.3872,
-                'NDCG@20': 32.2991
-            },
-
-            'Popular': {
-                'HR@5': 49.1983,
-                'NDCG@5': 36.7260,
-                'HR@10': 63.1195,
-                'NDCG@10': 41.1976,
-                'HR@20': 78.7172,
-                'NDCG@20': 45.1155
-            },
-
-            'Unpopular_seen': {
-                'HR@5': 5.3465,
-                'NDCG@5': 2.7530,
-                'HR@10': 11.8812,
-                'NDCG@10': 4.8335,
-                'HR@20': 27.1287,
-                'NDCG@20': 8.7062
-            },
-
-            'PopularRatio': {
-                'PopularRatio@5': 73.5700,
-                'PopularRatio@10': 62.3249,
-                'PopularRatio@20': 50.5666
-            }
-        }
-
-        print("\n")
-        print("=" * 70)
-        print("GROUP-AWARE ALIGNMENT: BIAS AMPLIFICATION ANALYSIS")
-        print("Reference: Target-only Baseline")
-        print("=" * 70)
-
-        for k in metric_ks:
-
-            print(f"\n@{k}")
-
-            for metric_type in ['HR', 'NDCG']:
-
-                metric_name = f'{metric_type}@{k}'
-
-                base_pop = target_only_baseline[
-                    'Popular'
-                ][metric_name]
-
-                base_tail = target_only_baseline[
-                    'Unpopular_seen'
-                ][metric_name]
-
-                current_pop = popular_metrics_dict[
-                    metric_name
-                ]
-
-                current_tail = unpopular_seen_metrics_dict[
-                    metric_name
-                ]
-
-                # Absolute transfer benefit
-                delta_pop = current_pop - base_pop
-                delta_tail = current_tail - base_tail
-
-                # Relative transfer benefit
-                ri_pop = (
-                    delta_pop / base_pop * 100
-                )
-
-                ri_tail = (
-                    delta_tail / base_tail * 100
-                )
-
-                # Bias Amplification Indicator
-                transfer_benefit_gap = (
-                    ri_pop - ri_tail
-                )
-
-                print(f'{metric_name}')
-
-                print(
-                    f'  Popular: '
-                    f'{base_pop:.4f} -> {current_pop:.4f} '
-                    f'| Δ={delta_pop:+.4f} '
-                    f'| RI={ri_pop:+.2f}%'
-                )
-
-                print(
-                    f'  Unpopular: '
-                    f'{base_tail:.4f} -> {current_tail:.4f} '
-                    f'| Δ={delta_tail:+.4f} '
-                    f'| RI={ri_tail:+.2f}%'
-                )
-
-                print(
-                    f'  Transfer Benefit Gap = '
-                    f'{transfer_benefit_gap:+.2f}%'
-                )
-
-        print("\n[Recommendation Popularity]")
-
-        for k in metric_ks:
-
-            metric_name = f'PopularRatio@{k}'
-
-            baseline_ratio = target_only_baseline[
-                'PopularRatio'
-            ][metric_name]
-
-            current_ratio = popular_ratio_dict[
-                metric_name
-            ]
-
-            ratio_change = (
-                current_ratio - baseline_ratio
-            )
-
-            print(
-                f'{metric_name}: '
-                f'{baseline_ratio:.4f}% -> '
-                f'{current_ratio:.4f}% '
-                f'| Δ={ratio_change:+.4f} pp'
-            )
-
-        print("=" * 70)
-
 
     print('Best Eval---------------------------------------------------------')
     logger.info('Best Eval---------------------------------------------------------')
