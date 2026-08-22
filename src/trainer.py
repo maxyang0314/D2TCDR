@@ -227,7 +227,123 @@ def calculate_sequence_popular_ratio(
     )
 
     return popular_count / len(valid_items)
+def build_coordinated_target_next_weights(
+    seq_list,
+    target_list,
+    popular_items,
+    unpopular_seen_items,
+    target_next_weight_map,
+    context_threshold
+):
+    """
+    Experiment C-2: Coordinated Sample-wise Regulation
 
+    Rule:
+    1. Popular Next
+       -> Normal
+
+    2. Unpopular Next + Tail-context
+       -> D1 Reweight
+
+    3. Unpopular Next + Popular-context
+       -> D2 route, D1 weight remains 1.0
+
+    4. Unpopular Next + Balanced-context
+       -> Normal
+
+    Note:
+        D1 / D2 action selection 使用 augmentation 前的 original sequence。
+    """
+
+    weights = []
+
+    stats = {
+        'popular_next_normal': 0,
+        'tailcontext_unpopnext_D1': 0,
+        'popcontext_unpopnext_D2': 0,
+        'balanced_unpopnext_normal': 0
+    }
+
+    for seq, target_item in zip(
+        seq_list,
+        target_list
+    ):
+
+        target_item = int(target_item)
+
+        # ========================================
+        # Popular Next -> Normal
+        # ========================================
+
+        if target_item not in unpopular_seen_items:
+
+            weights.append(1.0)
+
+            stats[
+                'popular_next_normal'
+            ] += 1
+
+            continue
+
+        # ========================================
+        # Unpopular Next
+        # -> 再看 Sequence Popularity
+        # ========================================
+
+        seq_pop_ratio = (
+            calculate_sequence_popular_ratio(
+                seq,
+                popular_items
+            )
+        )
+
+        # ----------------------------------------
+        # Tail-context + Unpopular Next
+        # -> D1 Reweight
+        # ----------------------------------------
+
+        if seq_pop_ratio < context_threshold:
+
+            weights.append(
+                target_next_weight_map.get(
+                    target_item,
+                    1.0
+                )
+            )
+
+            stats[
+                'tailcontext_unpopnext_D1'
+            ] += 1
+
+        # ----------------------------------------
+        # Popular-context + Unpopular Next
+        # -> D2 handles this sample
+        # -> D1 stays Normal
+        # ----------------------------------------
+
+        elif seq_pop_ratio > context_threshold:
+
+            weights.append(1.0)
+
+            stats[
+                'popcontext_unpopnext_D2'
+            ] += 1
+
+        # ----------------------------------------
+        # ratio == threshold
+        # -> Balanced context
+        # -> Normal
+        # ----------------------------------------
+
+        else:
+
+            weights.append(1.0)
+
+            stats[
+                'balanced_unpopnext_normal'
+            ] += 1
+
+    return weights, stats
 def pad_or_truncate_sequence(seq, max_len):
     """
     移除 padding 0，
@@ -885,6 +1001,14 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
         flag_update = 0
         for j in range(num_batches):
             batch_df = train_data.sample(n=args.batch_size).copy()
+            # ========================================================
+            # C-2:
+            # 保存 augmentation 前的 sequence，
+            # D1 / D2 Action Selection 都以原始 state 為準
+            # ========================================================
+
+            original_seq_list = (batch_df['seq'].tolist())
+            original_target_list = (batch_df['next'].tolist())
             d2_batch_stats = None
 
             # ========================================================
@@ -966,27 +1090,73 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
             target_list = (
                 batch_df['next'].tolist()
             )
+
             # ========================================================
-            # D1: Sample-wise Target Next Supervision Regulation
+            # D1: Coordinated Sample-wise Supervision Regulation
             # ========================================================
+
+            coordinated_batch_stats = None
 
             if (
                 not pretrain_flag
                 and args.target_next_rule_reweight == 1
             ):
 
-                target_next_weights = torch.tensor(
-                    [
-                        target_next_weight_map[
-                            int(item)
-                        ]
-                        for item in target_list
-                    ],
-                    dtype=torch.float32,
-                    device=device
-                )
+                # ====================================================
+                # C-2 Coordinated Regulation
+                # ====================================================
+
+                if args.coordinated_regulation == 1:
+
+                    (
+                        coordinated_weights,
+                        coordinated_batch_stats
+                    ) = build_coordinated_target_next_weights(
+
+                        # 一定使用 D2 augmentation 前的 sequence
+                        seq_list=original_seq_list,
+
+                        target_list=original_target_list,
+
+                        popular_items=
+                            stage2_target_popular_items,
+
+                        unpopular_seen_items=
+                            stage2_target_unpopular_items,
+
+                        target_next_weight_map=
+                            target_next_weight_map,
+
+                        context_threshold=
+                            args.group_context_threshold
+                    )
+
+                    target_next_weights = torch.tensor(
+                        coordinated_weights,
+                        dtype=torch.float32,
+                        device=device
+                    )
+
+                # ====================================================
+                # C-1 Naive Combination
+                # 保留作 ablation
+                # ====================================================
+
+                else:
+
+                    target_next_weights = torch.tensor(
+                        [
+                            target_next_weight_map[
+                                int(item)
+                            ]
+                            for item in target_list
+                        ],
+                        dtype=torch.float32,
+                        device=device
+                    )
 
             else:
+
                 target_next_weights = None
             if (
                 not pretrain_flag
