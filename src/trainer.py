@@ -233,36 +233,49 @@ def build_coordinated_target_next_weights(
     popular_items,
     unpopular_seen_items,
     target_next_weight_map,
-    context_threshold
+    context_threshold,
+    full_alpha,
+    weak_alpha
 ):
     """
-    Experiment C-2: Coordinated Sample-wise Regulation
+    Experiment C-3: Soft Coordinated Sample-wise Regulation
 
     Rule:
+
     1. Popular Next
        -> Normal
 
     2. Unpopular Next + Tail-context
-       -> D1 Reweight
+       -> Full D1 Reweight
 
-    3. Unpopular Next + Popular-context
-       -> D2 route, D1 weight remains 1.0
+    3. Unpopular Next + Balanced-context
+       -> Full D1 Reweight
 
-    4. Unpopular Next + Balanced-context
-       -> Normal
+    4. Unpopular Next + Popular-context
+       -> D2 Context Regulation
+       -> Weak D1 Reweight
 
-    Note:
-        D1 / D2 action selection 使用 augmentation 前的 original sequence。
+    Action selection 一律使用 augmentation 前的 original sequence.
     """
 
     weights = []
 
     stats = {
         'popular_next_normal': 0,
-        'tailcontext_unpopnext_D1': 0,
-        'popcontext_unpopnext_D2': 0,
-        'balanced_unpopnext_normal': 0
+        'tailcontext_unpopnext_full_D1': 0,
+        'balanced_unpopnext_full_D1': 0,
+        'popcontext_unpopnext_D2_weak_D1': 0
     }
+
+    # full alpha 必須 > 0，才能由 full weight 換算 weak weight
+    if full_alpha <= 0:
+        raise ValueError(
+            'full_alpha must be greater than 0.'
+        )
+
+    weak_scale = (
+        weak_alpha / full_alpha
+    )
 
     for seq, target_item in zip(
         seq_list,
@@ -272,7 +285,8 @@ def build_coordinated_target_next_weights(
         target_item = int(target_item)
 
         # ========================================
-        # Popular Next -> Normal
+        # Popular Next
+        # -> Normal
         # ========================================
 
         if target_item not in unpopular_seen_items:
@@ -287,7 +301,7 @@ def build_coordinated_target_next_weights(
 
         # ========================================
         # Unpopular Next
-        # -> 再看 Sequence Popularity
+        # -> 看 Sequence Popularity
         # ========================================
 
         seq_pop_ratio = (
@@ -297,53 +311,80 @@ def build_coordinated_target_next_weights(
             )
         )
 
-        # ----------------------------------------
+        # Experiment A α=.25 算出的完整 weight
+        full_weight = (
+            target_next_weight_map.get(
+                target_item,
+                1.0
+            )
+        )
+
+        # ========================================
         # Tail-context + Unpopular Next
-        # -> D1 Reweight
-        # ----------------------------------------
+        # -> Full D1
+        # ========================================
 
         if seq_pop_ratio < context_threshold:
 
             weights.append(
-                target_next_weight_map.get(
-                    target_item,
-                    1.0
-                )
+                full_weight
             )
 
             stats[
-                'tailcontext_unpopnext_D1'
+                'tailcontext_unpopnext_full_D1'
             ] += 1
 
-        # ----------------------------------------
+        # ========================================
         # Popular-context + Unpopular Next
-        # -> D2 handles this sample
-        # -> D1 stays Normal
-        # ----------------------------------------
+        #
+        # -> D2
+        # -> Weak D1
+        # ========================================
 
         elif seq_pop_ratio > context_threshold:
 
-            weights.append(1.0)
+            # full_weight:
+            # 1 + 0.25 * frequency_factor
+            #
+            # weak_weight:
+            # 1 + 0.10 * frequency_factor
+
+            weak_weight = (
+                1.0
+                +
+                (
+                    full_weight - 1.0
+                )
+                * weak_scale
+            )
+
+            weights.append(
+                weak_weight
+            )
 
             stats[
-                'popcontext_unpopnext_D2'
+                'popcontext_unpopnext_D2_weak_D1'
             ] += 1
 
-        # ----------------------------------------
-        # ratio == threshold
-        # -> Balanced context
-        # -> Normal
-        # ----------------------------------------
+        # ========================================
+        # Balanced-context + Unpopular Next
+        #
+        # C-2 原本是 Normal
+        # C-3 改回 Full D1
+        # ========================================
 
         else:
 
-            weights.append(1.0)
+            weights.append(
+                full_weight
+            )
 
             stats[
-                'balanced_unpopnext_normal'
+                'balanced_unpopnext_full_D1'
             ] += 1
 
     return weights, stats
+
 def pad_or_truncate_sequence(seq, max_len):
     """
     移除 padding 0，
@@ -1113,7 +1154,7 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                         coordinated_batch_stats
                     ) = build_coordinated_target_next_weights(
 
-                        # 一定使用 D2 augmentation 前的 sequence
+                        # State 一律使用 augmentation 前資料
                         seq_list=original_seq_list,
 
                         target_list=original_target_list,
@@ -1128,7 +1169,13 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                             target_next_weight_map,
 
                         context_threshold=
-                            args.group_context_threshold
+                            args.group_context_threshold,
+
+                        full_alpha=
+                            args.target_next_reweight_alpha,
+
+                        weak_alpha=
+                            args.popular_context_weak_alpha
                     )
 
                     target_next_weights = torch.tensor(

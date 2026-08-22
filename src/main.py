@@ -45,6 +45,7 @@ parser.add_argument('--tail_drop_probability', type=float, default=0.2, help='Pr
 parser.add_argument('--tail_preserve_recent', type=int, default=2, help='Number of recent interactions always preserved')
 parser.add_argument('--target_next_rule_reweight', type=int, default=1, choices=[0, 1], help='Enable sample-wise Target next reweighting')
 parser.add_argument('--target_next_reweight_alpha', type=float, default=0.25, help='Reweight strength for Unpopular Target next items')
+parser.add_argument('--popular_context_weak_alpha',type=float, default=0.10, help=('Weak D1 strength for ' 'Popular-context + Unpopular-next samples ' 'that are also handled by D2'))
 parser.add_argument('--coordinated_regulation', type=int, default=1, choices=[0, 1], help=('Coordinate D1/D2 actions: ' 'Tail-context + Unpopular-next -> D1; ' 'Popular-context + Unpopular-next -> D2'))
 parser.add_argument('--optimizer', type=str, default='Adam', choices=['SGD', 'Adam'])
 parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
