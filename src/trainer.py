@@ -140,16 +140,20 @@ def build_unpopular_next_frequency_groups(
     """
     Experiment D
 
-    根據 Target training data 中 next-item frequency，
-    將 Unpopular-next items 分成四個 frequency states：
+    根據 Target training data 中實際的 next-item frequency，
+    將 Unpopular-next items 分成三個 supervision states：
 
-        very_low
-        low
-        medium
-        high
+        singleton:
+            frequency = 1
 
-    這裡使用 frequency rank quartile，
-    確保四個 group 都有 item。
+        low_repeat:
+            frequency = 2
+
+        higher_repeat:
+            frequency >= 3
+
+    State 直接代表該 Next item 在 Target training data
+    中獲得多少次 supervision，不再使用 frequency rank quartile。
     """
 
     next_counter = Counter(
@@ -158,46 +162,27 @@ def build_unpopular_next_frequency_groups(
         if int(item) != 0
     )
 
-    # Experiment D 只研究 Unpopular Next
-    unpopular_next_items = [
-        item
-        for item in next_counter
-        if item not in popular_items
-    ]
+    group_map = {}
 
-    # frequency 小 → 大
-    sorted_items = sorted(
-        unpopular_next_items,
-        key=lambda item: (
-            next_counter[item],
-            item
-        )
-    )
+    for item, freq in next_counter.items():
 
-    n = len(sorted_items)
+        # Experiment D 只針對 Unpopular Next
+        if item in popular_items:
+            continue
 
-    if n == 0:
+        if freq == 1:
+            group_map[item] = 'singleton'
+
+        elif freq == 2:
+            group_map[item] = 'low_repeat'
+
+        else:
+            group_map[item] = 'higher_repeat'
+
+    if len(group_map) == 0:
         raise ValueError(
             "No Unpopular Target next items found."
         )
-
-    labels = [
-        'very_low',
-        'low',
-        'medium',
-        'high'
-    ]
-
-    group_map = {}
-
-    for rank, item in enumerate(sorted_items):
-
-        group_idx = min(
-            3,
-            int(rank * 4 / n)
-        )
-
-        group_map[item] = labels[group_idx]
 
     return (
         group_map,
@@ -224,11 +209,10 @@ def summarize_experiment_d_frequency_groups(
     """
 
     labels = [
-        'very_low',
-        'low',
-        'medium',
-        'high'
-    ]
+    'singleton',
+    'low_repeat',
+    'higher_repeat'
+]
 
     summary = {}
 
@@ -335,17 +319,42 @@ def build_experiment_d_target_next_weights(
 ):
     """
     Experiment D:
-    Next Frequency State × D1 Strength
+    Supervision Exposure State × D1 Strength
+
+    State:
+        singleton:
+            next frequency = 1
+
+        low_repeat:
+            next frequency = 2
+
+        higher_repeat:
+            next frequency >= 3
+
+    Action:
+        D1 Target Next Supervision Reweighting
 
     Popular Next:
         weight = 1
 
     Unpopular Next:
-        如果屬於目前 focus frequency state
+        如果屬於 focus state:
             weight = 1 + alpha
-        否則
+        其他 state:
             weight = 1
     """
+
+    valid_bins = {
+        'singleton',
+        'low_repeat',
+        'higher_repeat'
+    }
+
+    if focus_bin not in valid_bins:
+        raise ValueError(
+            f"Invalid target_next_focus_bin: {focus_bin}. "
+            f"Expected one of {sorted(valid_bins)}"
+        )
 
     (
         freq_group_map,
@@ -364,11 +373,11 @@ def build_experiment_d_target_next_weights(
             weight_map[item] = 1.0
             continue
 
-        # 指定 Frequency State → Regulation
+        # 指定 State → D1 Regulation
         if freq_group_map[item] == focus_bin:
             weight_map[item] = 1.0 + alpha
 
-        # 其他 Unpopular state → Normal
+        # 其他 Unpopular State → Normal
         else:
             weight_map[item] = 1.0
 
@@ -628,9 +637,9 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                 'D',
 
             'State Characteristic':
-                'Unpopular Next-item Frequency',
+                'Unpopular Next Supervision Exposure',
 
-            'Focus Frequency State':
+            'Focus State':
                 args.target_next_focus_bin,
 
             'Action':
@@ -641,8 +650,7 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
 
             'Applied Weight':
                 round(
-                    1.0
-                    + args.target_next_reweight_alpha,
+                    1.0 + args.target_next_reweight_alpha,
                     4
                 ),
 
@@ -665,10 +673,9 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
         )
 
         for state_name in [
-            'very_low',
-            'low',
-            'medium',
-            'high'
+            'singleton',
+            'low_repeat',
+            'higher_repeat'
         ]:
             print({
                 'State':
@@ -697,10 +704,9 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
         )
 
         for state_name in [
-            'very_low',
-            'low',
-            'medium',
-            'high'
+            'singleton',
+            'low_repeat',
+            'higher_repeat'
         ]:
             logger.info({
                 'State':

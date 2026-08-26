@@ -36,7 +36,7 @@ parser.add_argument('--metric_ks', nargs='+', type=int, default=[5, 10, 20], hel
 parser.add_argument('--popular_ratio', type=float, default=0.2, help='Top ratio of target-domain training items treated as popular')
 parser.add_argument('--target_next_rule_reweight', type=int, default=1, choices=[0, 1], help='Enable sample-wise Target Next regulation')
 parser.add_argument('--target_next_reweight_alpha', type=float, default=0.25, help='Reweight strength for Unpopular Target next items')
-parser.add_argument('--target_next_focus_bin', type=str, default='very_low', choices=['very_low','low','medium','high'], help='Which Unpopular Next frequency state receives D1 regulation')
+parser.add_argument('--target_next_focus_bin', type=str, default='singleton', choices=['singleton','low_repeat','higher_repeat'], help=('Experiment D supervision state: ''singleton=f1, ''low_repeat=f2, ''higher_repeat=f>=3'))
 parser.add_argument('--group_alignment', type=int, default=1, choices=[0, 1], help='Use Popular/Tail group-aware shared alignment')
 parser.add_argument('--group_context_threshold', type=float, default=0.5, help='Threshold for Popular/Tail sequence context')
 parser.add_argument('--group_pop_weight', type=float, default=1.0, help='Weight for Popular-to-Popular MMD')
