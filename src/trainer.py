@@ -133,19 +133,23 @@ def build_item_popularity_groups(
         item_counter
     )
 
-def build_samplewise_target_next_weights(
+def build_unpopular_next_frequency_groups(
     train_data,
-    popular_items,
-    alpha=1.0
+    popular_items
 ):
     """
-    D1: Sample-wise Target Next Regulation
+    Experiment D
 
-    Popular next:
-        raw weight = 1.0
+    根據 Target training data 中 next-item frequency，
+    將 Unpopular-next items 分成四個 frequency states：
 
-    Unpopular next:
-        使用 frequency-aware strength
+        very_low
+        low
+        medium
+        high
+
+    這裡使用 frequency rank quartile，
+    確保四個 group 都有 item。
     """
 
     next_counter = Counter(
@@ -154,42 +158,225 @@ def build_samplewise_target_next_weights(
         if int(item) != 0
     )
 
-    if len(next_counter) == 0:
+    # Experiment D 只研究 Unpopular Next
+    unpopular_next_items = [
+        item
+        for item in next_counter
+        if item not in popular_items
+    ]
+
+    # frequency 小 → 大
+    sorted_items = sorted(
+        unpopular_next_items,
+        key=lambda item: (
+            next_counter[item],
+            item
+        )
+    )
+
+    n = len(sorted_items)
+
+    if n == 0:
         raise ValueError(
-            "No valid Target next items found."
+            "No Unpopular Target next items found."
         )
 
-    max_freq = max(next_counter.values())
-    log_max_freq = np.log1p(max_freq)
+    labels = [
+        'very_low',
+        'low',
+        'medium',
+        'high'
+    ]
 
-    weight_map = {}
+    group_map = {}
+
+    for rank, item in enumerate(sorted_items):
+
+        group_idx = min(
+            3,
+            int(rank * 4 / n)
+        )
+
+        group_map[item] = labels[group_idx]
+
+    return (
+        group_map,
+        next_counter
+    )
+
+def summarize_experiment_d_frequency_groups(
+    freq_group_map,
+    next_counter
+):
+    """
+    Experiment D State Distribution
+
+    統計 Very-low / Low / Medium / High 各 State 的：
+    1. Unique Unpopular Next Items 數量
+    2. Training Samples 數量
+    3. Next-item Frequency 範圍
+    4. Mean Next-item Frequency
+
+    注意：
+    State 是依 unique item rank 切四等份，
+    所以 unique item 數量會接近，
+    但 training sample 數量不一定相同。
+    """
+
+    labels = [
+        'very_low',
+        'low',
+        'medium',
+        'high'
+    ]
+
+    summary = {}
+
+    for label in labels:
+
+        # 此 State 中有哪些 unique items
+        group_items = [
+            item
+            for item, group in freq_group_map.items()
+            if group == label
+        ]
+
+        # 1. Unique item 數量
+        unique_item_count = len(group_items)
+
+        # 2. Training sample 數量
+        # item 當過幾次 next，就代表有幾筆 training samples
+        training_sample_count = sum(
+            next_counter[item]
+            for item in group_items
+        )
+
+        # 3. Frequency statistics
+        frequencies = [
+            next_counter[item]
+            for item in group_items
+        ]
+
+        if len(frequencies) > 0:
+            min_freq = min(frequencies)
+            max_freq = max(frequencies)
+            mean_freq = float(np.mean(frequencies))
+        else:
+            min_freq = 0
+            max_freq = 0
+            mean_freq = 0.0
+
+        summary[label] = {
+            'Unique Items':
+                unique_item_count,
+
+            'Training Samples':
+                training_sample_count,
+
+            'Min Next Frequency':
+                min_freq,
+
+            'Max Next Frequency':
+                max_freq,
+
+            'Mean Next Frequency':
+                round(mean_freq, 4)
+        }
+
+    return summary
+
+def summarize_unpopular_next_frequency_distribution(
+    next_counter,
+    popular_items
+):
+    """
+    統計 Unpopular Next item 的實際 frequency 分布。
+
+    例如：
+    frequency = 1 有多少 unique items / training samples
+    frequency = 2 有多少 unique items / training samples
+    ...
+    """
+
+    freq_histogram = Counter()
 
     for item, freq in next_counter.items():
 
-        # -------------------------------
+        # Experiment D 只看 Unpopular Next
+        if item in popular_items:
+            continue
+
+        # key = 該 item 當 next 出現幾次
+        # value = 有多少 unique items 具有這個 frequency
+        freq_histogram[freq] += 1
+
+    summary = []
+
+    for freq in sorted(freq_histogram.keys()):
+
+        unique_items = freq_histogram[freq]
+
+        # 每個 item 都出現 freq 次
+        training_samples = unique_items * freq
+
+        summary.append({
+            'Next Frequency': freq,
+            'Unique Items': unique_items,
+            'Training Samples': training_samples
+        })
+
+    return summary
+
+def build_experiment_d_target_next_weights(
+    train_data,
+    popular_items,
+    focus_bin,
+    alpha
+):
+    """
+    Experiment D:
+    Next Frequency State × D1 Strength
+
+    Popular Next:
+        weight = 1
+
+    Unpopular Next:
+        如果屬於目前 focus frequency state
+            weight = 1 + alpha
+        否則
+            weight = 1
+    """
+
+    (
+        freq_group_map,
+        next_counter
+    ) = build_unpopular_next_frequency_groups(
+        train_data,
+        popular_items
+    )
+
+    weight_map = {}
+
+    for item in next_counter:
+
         # Popular Next → Normal
-        # -------------------------------
         if item in popular_items:
             weight_map[item] = 1.0
             continue
 
-        # -------------------------------
-        # Unpopular Next → Reweight
-        # -------------------------------
-        normalized_freq = (
-            np.log1p(freq)
-            / log_max_freq
-        )
+        # 指定 Frequency State → Regulation
+        if freq_group_map[item] == focus_bin:
+            weight_map[item] = 1.0 + alpha
 
-        weight = (
-            1.0
-            + alpha
-            * (1.0 - normalized_freq)
-        )
+        # 其他 Unpopular state → Normal
+        else:
+            weight_map[item] = 1.0
 
-        weight_map[item] = float(weight)
-
-    return weight_map, next_counter
+    return (
+        weight_map,
+        next_counter,
+        freq_group_map
+    )
 
 def calculate_sequence_popular_ratio(
     seq,
@@ -384,11 +571,34 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
 
         (
             target_next_weight_map,
-            target_next_counter
-        ) = build_samplewise_target_next_weights(
+            target_next_counter,
+            target_next_freq_group_map
+        ) = build_experiment_d_target_next_weights(
             train_data=train_data,
             popular_items=stage2_target_popular_items,
+            focus_bin=args.target_next_focus_bin,
             alpha=args.target_next_reweight_alpha
+        )
+
+        # ========================================================
+        # Unpopular Next Actual Frequency Distribution
+        # ========================================================
+
+        unpopular_next_frequency_distribution = (
+            summarize_unpopular_next_frequency_distribution(
+                next_counter=target_next_counter,
+                popular_items=stage2_target_popular_items
+            )
+        )
+        # ========================================================
+        # Experiment D Frequency State Distribution
+        # ========================================================
+
+        frequency_group_summary = (
+            summarize_experiment_d_frequency_groups(
+                freq_group_map=target_next_freq_group_map,
+                next_counter=target_next_counter
+            )
         )
 
         # --------------------------------------------
@@ -414,20 +624,33 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
         ]
 
         rule_info = {
-            'D1': 'Sample-wise Target Next Regulation',
-            'Popular Next Action': 'Normal',
-            'Unpopular Next Action': 'Reweight',
-            'Popular Next Samples':
-                popular_next_count,
-            'Unpopular Next Samples':
-                unpopular_next_count,
+            'Experiment':
+                'D',
+
+            'State Characteristic':
+                'Unpopular Next-item Frequency',
+
+            'Focus Frequency State':
+                args.target_next_focus_bin,
+
+            'Action':
+                'D1 Target Next Reweighting',
+
             'Alpha':
                 args.target_next_reweight_alpha,
-            'Mean Unpopular Raw Weight':
+
+            'Applied Weight':
                 round(
-                    float(np.mean(unpopular_weights)),
+                    1.0
+                    + args.target_next_reweight_alpha,
                     4
-                )
+                ),
+
+            'Popular Next Samples':
+                popular_next_count,
+
+            'Unpopular Next Samples':
+                unpopular_next_count
         }
 
         print(
@@ -436,10 +659,64 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
         )
         print(rule_info)
 
+        print(
+            'Experiment D Frequency State Distribution'
+            '---------------------------------------------'
+        )
+
+        for state_name in [
+            'very_low',
+            'low',
+            'medium',
+            'high'
+        ]:
+            print({
+                'State':
+                    state_name,
+
+                **frequency_group_summary[
+                    state_name
+                ]
+            })
+
+        print(
+            'Unpopular Next Actual Frequency Distribution'
+            '---------------------------------------------'
+        )
+
+        for row in unpopular_next_frequency_distribution:
+            print(row)
+
         logger.info(
             'D1 Sample-wise Target Next Regulation'
         )
         logger.info(rule_info)
+        logger.info(
+            'Experiment D Frequency State Distribution'
+            '---------------------------------------------'
+        )
+
+        for state_name in [
+            'very_low',
+            'low',
+            'medium',
+            'high'
+        ]:
+            logger.info({
+                'State':
+                    state_name,
+
+                **frequency_group_summary[
+                    state_name
+                ]
+            })
+        logger.info(
+            'Unpopular Next Actual Frequency Distribution'
+            '---------------------------------------------'
+        )
+
+        for row in unpopular_next_frequency_distribution:
+            logger.info(row)
     # ============================================================
     # Experiment E：Group-aware Alignment
     # ============================================================
