@@ -1,0 +1,20 @@
+2026/08/26 14:19:19 - __main__ - INFO - 98 - main - Namespace(batch_size=512, decay_step=100, description='Diffu_norm_score', device='cuda', diffusion_steps=32, dropout=0.1, e_context_high_threshold=0.75, e_context_low_threshold=0.5, e_context_state='high', emb_dropout=0.3, epochs=100, eval_interval=5, gamma=0.1, group_alignment=1, group_alignment_mode='both', group_context_threshold=0.5, group_pop_weight=1.0, group_tail_weight=1.0, hidden_act='gelu', hidden_size=128, inspect_e_distribution=0, lambda_uncertainty=0.001, log_file='log/', loss_lambda=1, lr=0.001, max_len=8, metric_ks=[5, 10, 20], momentum=None, noise_schedule='trunc_lin', num_blocks=4, num_gpu=1, optimizer='Adam', p=0.3, patience=2, popular_ratio=0.2, random_seed=1997, rescale_timesteps=True, s_dataset='movie', schedule_sampler_name='lossaware', t_dataset='video', tail_aug_probability=0.5, tail_context_regulation=1, tail_drop_probability=0.1, tail_preserve_recent=2, w=1.0, weight_decay=0)
+2026/08/26 14:19:22 - __main__ - INFO - 870 - trainer - Group-aware Alignment Definition------------------------------------
+2026/08/26 14:19:22 - __main__ - INFO - 874 - trainer - {'group_alignment': True, 'alignment_mode': 'both', 'context_threshold': 0.5, 'popular_weight': 1.0, 'tail_weight': 1.0, 'source_popular_items': 17856, 'target_popular_items': 4372}
+2026/08/26 14:19:22 - __main__ - INFO - 1157 - trainer - Group-aware Alignment Batch------------------------------------
+2026/08/26 14:19:22 - __main__ - INFO - 1162 - trainer - {'Epoch': 0, 'Source Popular-context': 407, 'Source Tail-context': 75, 'Target Popular-context': 379, 'Target Tail-context': 87}
+2026/08/26 14:19:27 - __main__ - INFO - 1173 - trainer - Epoch: 0
+2026/08/26 14:19:27 - __main__ - INFO - 1157 - trainer - Group-aware Alignment Batch------------------------------------
+2026/08/26 14:19:27 - __main__ - INFO - 1162 - trainer - {'Epoch': 1, 'Source Popular-context': 394, 'Source Tail-context': 77, 'Target Popular-context': 372, 'Target Tail-context': 83}
+2026/08/26 14:19:32 - __main__ - INFO - 1173 - trainer - Epoch: 1
+2026/08/26 14:19:32 - __main__ - INFO - 1157 - trainer - Group-aware Alignment Batch------------------------------------
+2026/08/26 14:19:32 - __main__ - INFO - 1162 - trainer - {'Epoch': 2, 'Source Popular-context': 393, 'Source Tail-context': 73, 'Target Popular-context': 387, 'Target Tail-context': 77}
+2026/08/26 14:19:36 - __main__ - INFO - 1173 - trainer - Epoch: 2
+2026/08/26 14:19:36 - __main__ - INFO - 1157 - trainer - Group-aware Alignment Batch------------------------------------
+2026/08/26 14:19:36 - __main__ - INFO - 1162 - trainer - {'Epoch': 3, 'Source Popular-context': 409, 'Source Tail-context': 56, 'Target Popular-context': 342, 'Target Tail-context': 98}
+2026/08/26 14:19:41 - __main__ - INFO - 1173 - trainer - Epoch: 3
+2026/08/26 14:19:41 - __main__ - INFO - 1157 - trainer - Group-aware Alignment Batch------------------------------------
+2026/08/26 14:19:41 - __main__ - INFO - 1162 - trainer - {'Epoch': 4, 'Source Popular-context': 418, 'Source Tail-context': 59, 'Target Popular-context': 370, 'Target Tail-context': 79}
+2026/08/26 14:19:45 - __main__ - INFO - 1173 - trainer - Epoch: 4
+2026/08/26 14:19:45 - __main__ - INFO - 1157 - trainer - Group-aware Alignment Batch------------------------------------
+2026/08/26 14:19:45 - __main__ - INFO - 1162 - trainer - {'Epoch': 5, 'Source Popular-context': 403, 'Source Tail-context': 59, 'Target Popular-context': 368, 'Target Tail-context': 85}

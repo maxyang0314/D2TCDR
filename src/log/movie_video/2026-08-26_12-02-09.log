@@ -1,0 +1,41 @@
+2026/08/26 12:02:09 - __main__ - INFO - 95 - main - Namespace(batch_size=512, decay_step=100, description='Diffu_norm_score', device='cuda', diffusion_steps=32, dropout=0.1, emb_dropout=0.3, epochs=100, eval_interval=5, gamma=0.1, group_alignment=1, group_alignment_mode='both', group_context_threshold=0.5, group_pop_weight=1.0, group_tail_weight=1.0, hidden_act='gelu', hidden_size=128, inspect_e_distribution=1, lambda_uncertainty=0.001, log_file='log/', loss_lambda=1, lr=0.001, max_len=8, metric_ks=[5, 10, 20], momentum=None, noise_schedule='trunc_lin', num_blocks=4, num_gpu=1, optimizer='Adam', p=0.3, patience=2, popular_ratio=0.2, random_seed=1997, rescale_timesteps=True, s_dataset='movie', schedule_sampler_name='lossaware', t_dataset='video', tail_aug_probability=0.5, tail_context_regulation=1, tail_drop_probability=0.2, tail_preserve_recent=2, w=1.0, weight_decay=0)
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - Experiment E State Distribution---------------------------------------------
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - Target training samples: 16438
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - Observed train items: 21856
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - Popular items: 4372
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - Unpopular-seen items: 17484
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - Unpopular-Next samples: 4912
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - 
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - Sequence Popular Ratio Distribution (Next = Unpopular)
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - ---------------------------------------------
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - ratio = 0.000000 -> 408 samples (8.31%)
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - ratio = 0.125000 -> 108 samples (2.20%)
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - ratio = 0.142857 -> 32 samples (0.65%)
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - ratio = 0.166667 -> 51 samples (1.04%)
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - ratio = 0.200000 -> 109 samples (2.22%)
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - ratio = 0.250000 -> 407 samples (8.29%)
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - ratio = 0.285714 -> 34 samples (0.69%)
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - ratio = 0.333333 -> 64 samples (1.30%)
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - ratio = 0.375000 -> 135 samples (2.75%)
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - ratio = 0.400000 -> 151 samples (3.07%)
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - ratio = 0.428571 -> 53 samples (1.08%)
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - ratio = 0.500000 -> 636 samples (12.95%)
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - ratio = 0.571429 -> 85 samples (1.73%)
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - ratio = 0.600000 -> 205 samples (4.17%)
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - ratio = 0.625000 -> 209 samples (4.25%)
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - ratio = 0.666667 -> 130 samples (2.65%)
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - ratio = 0.714286 -> 74 samples (1.51%)
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - ratio = 0.750000 -> 683 samples (13.90%)
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - ratio = 0.800000 -> 195 samples (3.97%)
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - ratio = 0.833333 -> 116 samples (2.36%)
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - ratio = 0.857143 -> 61 samples (1.24%)
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - ratio = 0.875000 -> 211 samples (4.30%)
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - ratio = 1.000000 -> 755 samples (15.37%)
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - 
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - Valid Sequence Length Distribution
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - ---------------------------------------------
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - length = 4 -> 1638 samples (33.35%)
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - length = 5 -> 892 samples (18.16%)
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - length = 6 -> 581 samples (11.83%)
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - length = 7 -> 403 samples (8.20%)
+2026/08/26 12:02:09 - __main__ - INFO - 324 - trainer - length = 8 -> 1398 samples (28.46%)

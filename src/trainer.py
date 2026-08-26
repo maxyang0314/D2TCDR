@@ -160,6 +160,181 @@ def calculate_sequence_popular_ratio(
 
     return popular_count / len(valid_items)
 
+# ============================================================
+# Experiment E：State Distribution Inspection
+# ============================================================
+
+def analyze_e_sequence_popularity_distribution(
+    train_data,
+    popular_ratio=0.2,
+    logger=None
+):
+    """
+    Experiment E 前置檢查：
+
+    只觀察 Target training data 中
+    Next = Unpopular 的 samples，
+
+    統計它們的 Sequence Popular Ratio 分布。
+
+    這一步只做 State diagnosis，
+    不做 dropout、不修改 training sample。
+    """
+
+    (
+        popular_items,
+        unpopular_seen_items,
+        observed_train_items,
+        _
+    ) = build_item_popularity_groups(
+        train_data,
+        popular_ratio=popular_ratio
+    )
+
+    ratio_counter = Counter()
+    valid_length_counter = Counter()
+
+    unpopular_next_samples = 0
+
+    for _, row in train_data.iterrows():
+
+        target_item = int(row['next'])
+
+        # ----------------------------------------------------
+        # Experiment E controlled condition:
+        # 只觀察 Next = Unpopular
+        # ----------------------------------------------------
+        if target_item not in unpopular_seen_items:
+            continue
+
+        unpopular_next_samples += 1
+
+        seq = list(row['seq'])
+
+        # Sequence Popular Ratio
+        seq_pop_ratio = calculate_sequence_popular_ratio(
+            seq,
+            popular_items
+        )
+
+        # 避免 floating point 造成相同 ratio 被拆成不同 key
+        rounded_ratio = round(seq_pop_ratio, 6)
+
+        ratio_counter[rounded_ratio] += 1
+
+        # 同時記錄 valid sequence length
+        # 用來解釋為什麼 ratio 不一定只有 0.125 的倍數
+        valid_length = sum(
+            1
+            for item in seq
+            if int(item) != 0
+        )
+
+        valid_length_counter[valid_length] += 1
+
+    # ========================================================
+    # Output
+    # ========================================================
+
+    lines = []
+
+    lines.append(
+        "Experiment E State Distribution"
+        "---------------------------------------------"
+    )
+
+    lines.append(
+        f"Target training samples: {len(train_data)}"
+    )
+
+    lines.append(
+        f"Observed train items: {len(observed_train_items)}"
+    )
+
+    lines.append(
+        f"Popular items: {len(popular_items)}"
+    )
+
+    lines.append(
+        f"Unpopular-seen items: {len(unpopular_seen_items)}"
+    )
+
+    lines.append(
+        f"Unpopular-Next samples: {unpopular_next_samples}"
+    )
+
+    lines.append("")
+    lines.append(
+        "Sequence Popular Ratio Distribution "
+        "(Next = Unpopular)"
+    )
+    lines.append(
+        "---------------------------------------------"
+    )
+
+    for ratio in sorted(ratio_counter.keys()):
+
+        count = ratio_counter[ratio]
+
+        percentage = (
+            count / unpopular_next_samples * 100
+            if unpopular_next_samples > 0
+            else 0.0
+        )
+
+        lines.append(
+            f"ratio = {ratio:.6f} "
+            f"-> {count} samples "
+            f"({percentage:.2f}%)"
+        )
+
+    # --------------------------------------------------------
+    # 額外印 valid sequence length
+    # --------------------------------------------------------
+
+    lines.append("")
+    lines.append(
+        "Valid Sequence Length Distribution"
+    )
+    lines.append(
+        "---------------------------------------------"
+    )
+
+    for length in sorted(valid_length_counter.keys()):
+
+        count = valid_length_counter[length]
+
+        percentage = (
+            count / unpopular_next_samples * 100
+            if unpopular_next_samples > 0
+            else 0.0
+        )
+
+        lines.append(
+            f"length = {length} "
+            f"-> {count} samples "
+            f"({percentage:.2f}%)"
+        )
+
+    # print + log
+    for line in lines:
+        print(line)
+
+        if logger is not None:
+            logger.info(line)
+
+    return {
+        'ratio_distribution': dict(
+            sorted(ratio_counter.items())
+        ),
+        'valid_length_distribution': dict(
+            sorted(valid_length_counter.items())
+        ),
+        'unpopular_next_samples': unpopular_next_samples,
+        'popular_items': len(popular_items),
+        'unpopular_seen_items': len(unpopular_seen_items)
+    }
+
 def pad_or_truncate_sequence(seq, max_len):
     """
     移除 padding 0，
@@ -247,7 +422,9 @@ def rule_based_tail_context_regulation(
     batch_df,
     popular_items,
     unpopular_seen_items,
-    context_threshold,
+    context_state,
+    low_threshold,
+    high_threshold,
     max_len,
     augmentation_probability,
     drop_probability,
@@ -255,27 +432,40 @@ def rule_based_tail_context_regulation(
     random_seed
 ):
     """
-    D2: Rule-based Tail-target Context Regulation
+    Experiment E / D2:
+    State-dependent Sequence Regulation
+
+    Controlled samples:
+        Next = Unpopular
 
     State:
-        S1 = Sequence Popularity
-        S2 = Next-item Popularity
+        Low:
+            Sequence Popular Ratio < low_threshold
 
-    Rule:
-        Next = Unpopular
-        AND
-        Sequence Popular Ratio > context_threshold
-            -> eligible for context dropout
+        Medium:
+            low_threshold <= Sequence Popular Ratio < high_threshold
 
-        otherwise
-            -> keep original sequence
+        High:
+            Sequence Popular Ratio >= high_threshold
+
+    Strength:
+        drop_probability
+
+    Legacy:
+        Sequence Popular Ratio > low_threshold
+        保留原本 D2 行為。
     """
 
     if not 0.0 <= augmentation_probability <= 1.0:
         raise ValueError(
             'tail_aug_probability must be between 0 and 1.'
         )
-
+    if not 0.0 <= low_threshold < high_threshold <= 1.0:
+        raise ValueError(
+            'Experiment E thresholds must satisfy '
+            '0 <= low_threshold < high_threshold <= 1.'
+        )
+    
     batch_df = (
         batch_df
         .copy()
@@ -337,16 +527,51 @@ def rule_based_tail_context_regulation(
         )
 
         # ========================================
-        # Rule:
-        #
-        # Unpopular Next
-        # + Popular-context
+        # Experiment E：State Selection
         # ========================================
 
-        if seq_pop_ratio <= context_threshold:
+        if context_state == 'low':
+
+            state_match = (
+                seq_pop_ratio < low_threshold
+            )
+
+        elif context_state == 'medium':
+
+            state_match = (
+                low_threshold
+                <= seq_pop_ratio
+                < high_threshold
+            )
+
+        elif context_state == 'high':
+
+            state_match = (
+                seq_pop_ratio >= high_threshold
+            )
+
+        elif context_state == 'legacy':
+
+            # 原本 D2：
+            # Popular-context + Unpopular Next
+            state_match = (
+                seq_pop_ratio > low_threshold
+            )
+
+        else:
+
+            raise ValueError(
+                f'Unknown Experiment E context state: '
+                f'{context_state}'
+            )
+
+
+        if not state_match:
             continue
 
+
         eligible_samples += 1
+
         eligible_pop_ratio_sum += (
             seq_pop_ratio
         )
@@ -396,42 +621,53 @@ def rule_based_tail_context_regulation(
         )
 
     stats = {
-
         'batch_size':
-            len(batch_df),
+        len(batch_df),
+
+        'experiment_e_state':
+        context_state,
+
+        'low_threshold':
+        low_threshold,
+
+        'high_threshold':
+        high_threshold,
+
+        'drop_probability':
+        drop_probability,
 
         'unpopular_next_samples':
-            unpopular_next_samples,
+        unpopular_next_samples,
 
-        'eligible_popcontext_unpopnext':
-            eligible_samples,
+        'eligible_state_unpopnext':
+        eligible_samples,
 
         'augmented_samples':
-            augmented_samples,
+        augmented_samples,
 
         'eligible_ratio':
-            round(
-                eligible_samples
-                / max(len(batch_df), 1),
-                4
-            ),
+        round(
+            eligible_samples
+            / max(len(batch_df), 1),
+            4
+        ),
 
         'augmentation_ratio_among_eligible':
-            round(
-                augmented_samples
-                / max(eligible_samples, 1),
-                4
-            ),
+        round(
+            augmented_samples
+            / max(eligible_samples, 1),
+            4
+        ),
 
         'avg_eligible_sequence_pop_ratio':
-            round(
-                eligible_pop_ratio_sum
-                / max(eligible_samples, 1),
-                4
-            ),
+        round(
+            eligible_pop_ratio_sum
+            / max(eligible_samples, 1),
+            4
+        ),
 
         'dropped_items':
-            dropped_item_count
+        dropped_item_count
     }
 
     return (
@@ -579,7 +815,7 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
     num_rows=train_data.shape[0]
     num_batches=int(num_rows/args.batch_size)
     # ============================================================
-    # Experiment E：Group-aware Alignment
+    # D3：Group-aware Alignment
     # ============================================================
 
     source_popular_items = None
@@ -661,38 +897,54 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
         )
 
         d2_setup = {
+            'Experiment':
+            'E',
 
-            'D2':
-                'Tail-target Context Regulation',
+            'Mechanism':
+            'M2 Representation Dominance',
 
-            'State_1':
-                'Sequence Popularity',
+            'Action':
+            'D2 Sequence Regulation',
 
-            'State_2':
-                'Next-item Popularity',
+            'Next_condition':
+            'Unpopular Next',
 
-            'Rule':
-                (
-                    'Unpopular Next + '
-                    f'SeqPopRatio > '
-                    f'{args.group_context_threshold}'
-                    ' -> Context Dropout'
-                ),
+            'Context_state':
+            args.e_context_state,
+
+            'Low':
+            (
+                f'SeqPopRatio < '
+                f'{args.e_context_low_threshold}'
+            ),
+
+            'Medium':
+            (
+                f'{args.e_context_low_threshold} '
+                f'<= SeqPopRatio < '
+                f'{args.e_context_high_threshold}'
+            ),
+
+            'High':
+            (
+                f'SeqPopRatio >= '
+                f'{args.e_context_high_threshold}'
+            ),
 
             'augmentation_probability':
-                args.tail_aug_probability,
+            args.tail_aug_probability,
 
             'drop_probability':
-                args.tail_drop_probability,
+            args.tail_drop_probability,
 
             'preserve_recent':
-                args.tail_preserve_recent,
+            args.tail_preserve_recent,
 
             'popular_items':
-                len(d2_target_popular_items),
+            len(d2_target_popular_items),
 
             'unpopular_seen_items':
-                len(d2_target_unpopular_items)
+            len(d2_target_unpopular_items)
         }
 
         print(
@@ -738,32 +990,37 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                     batch_df,
                     d2_batch_stats
                 ) = rule_based_tail_context_regulation(
-
                     batch_df=batch_df,
 
                     popular_items=
-                        d2_target_popular_items,
+                    d2_target_popular_items,
 
                     unpopular_seen_items=
-                        d2_target_unpopular_items,
+                    d2_target_unpopular_items,
 
-                    context_threshold=
-                        args.group_context_threshold,
+                    context_state=
+                    args.e_context_state,
+
+                    low_threshold=
+                    args.e_context_low_threshold,
+
+                    high_threshold=
+                    args.e_context_high_threshold,
 
                     max_len=
-                        args.max_len,
+                    args.max_len,
 
                     augmentation_probability=
-                        args.tail_aug_probability,
+                    args.tail_aug_probability,
 
                     drop_probability=
-                        args.tail_drop_probability,
+                    args.tail_drop_probability,
 
                     preserve_recent=
-                        args.tail_preserve_recent,
+                    args.tail_preserve_recent,
 
                     random_seed=
-                        augmentation_seed
+                    augmentation_seed
                 )
 
                 # ========================================================
@@ -813,7 +1070,7 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                 con_seq = torch.LongTensor(con_seq_list).to(device)
 
                 # ====================================================
-                # Experiment E：
+                # D3：Group-aware Alignment
                 # 建立 Source / Target Popular/Tail context masks
                 # ====================================================
 

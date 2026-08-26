@@ -7,7 +7,7 @@ import numpy as np
 import logging
 import time
 from model import create_model_diffu, Att_Diffuse_model
-from trainer import model_train
+from trainer import model_train,analyze_e_sequence_popularity_distribution
 import pandas as pd
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
@@ -34,6 +34,7 @@ parser.add_argument('--decay_step', type=int, default=100, help='Decay step for 
 parser.add_argument('--gamma', type=float, default=0.1, help='Gamma for StepLR')
 parser.add_argument('--metric_ks', nargs='+', type=int, default=[5, 10, 20], help='ks for Metric@k')
 parser.add_argument('--popular_ratio', type=float, default=0.2, help='Top ratio of target-domain training items treated as popular')
+parser.add_argument('--inspect_e_distribution', type=int, default=0, choices=[0, 1], help='Inspect Experiment E Sequence Popular Ratio distribution and exit')
 parser.add_argument('--group_alignment', type=int, default=1, choices=[0, 1], help='Use Popular/Tail group-aware shared alignment')
 parser.add_argument('--group_context_threshold', type=float, default=0.5, help='Threshold for Popular/Tail sequence context')
 parser.add_argument('--group_pop_weight', type=float, default=1.0, help='Weight for Popular-to-Popular MMD')
@@ -43,6 +44,9 @@ parser.add_argument('--tail_context_regulation', type=int, default=1, choices=[0
 parser.add_argument('--tail_aug_probability', type=float, default=0.5, help='Probability of applying context dropout to an eligible sample')
 parser.add_argument('--tail_drop_probability', type=float, default=0.2, help='Probability of dropping each older interaction')
 parser.add_argument('--tail_preserve_recent', type=int, default=2, help='Number of recent interactions always preserved')
+parser.add_argument('--e_context_state', type=str, default='legacy', choices=['legacy', 'low', 'medium', 'high'], help=('Experiment E target context state: ''low: ratio < 0.5, ''medium: 0.5 <= ratio < 0.75, ''high: ratio >= 0.75'))
+parser.add_argument('--e_context_low_threshold', type=float, default=0.5, help='Boundary between Low and Medium context state')
+parser.add_argument('--e_context_high_threshold', type=float, default=0.75, help='Boundary between Medium and High context state')
 parser.add_argument('--optimizer', type=str, default='Adam', choices=['SGD', 'Adam'])
 parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
 parser.add_argument('--loss_lambda', type=float, default=1, help='loss weight for diffusion')
@@ -109,6 +113,31 @@ def main(args):
     t_val_data = pd.read_pickle(t_val_path)
     t_test_data = pd.read_pickle(t_test_path)
 
+    # ============================================================
+    # Experiment E：State Distribution Inspection
+    #
+    # Controlled condition:
+    # Next = Unpopular
+    # State:
+    # Sequence Popular Ratio
+    #
+    # 只做 distribution inspection，不進入 training
+    # ============================================================
+
+    if args.inspect_e_distribution == 1:
+
+        analyze_e_sequence_popularity_distribution(
+            train_data=t_tra_data,
+            popular_ratio=args.popular_ratio,
+            logger=logger
+        )
+
+        print(
+            "Experiment E distribution inspection finished. "
+            "Training is skipped."
+        )
+
+        return
     source_item_num = 98507
     target_item_num = 23978
 
