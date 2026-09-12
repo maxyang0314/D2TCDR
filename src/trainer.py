@@ -1,9 +1,11 @@
+import os
 import torch.nn as nn
 import torch.optim as optim
 import datetime
 import torch
 import torch.nn.functional as F
 import numpy as np
+import pandas as pd
 import copy
 import time
 import random
@@ -918,6 +920,1153 @@ def run_experiment_f_meta_check(
         )
 
     return results
+
+# ============================================================
+# Experiment F-E：Gradient Utilities
+# ============================================================
+
+def get_flat_gradients(
+    loss,
+    parameters
+):
+    """
+    對指定 parameters 求 gradient，
+    並攤平成一條 vector。
+    """
+
+    gradients = torch.autograd.grad(
+        loss,
+        parameters,
+        retain_graph=False,
+        create_graph=False,
+        allow_unused=True
+    )
+
+    flat_gradients = []
+
+    for parameter, gradient in zip(
+        parameters,
+        gradients
+    ):
+
+        if gradient is None:
+
+            flat_gradients.append(
+                torch.zeros_like(
+                    parameter
+                ).reshape(-1)
+            )
+
+        else:
+
+            flat_gradients.append(
+                gradient
+                .detach()
+                .reshape(-1)
+            )
+
+    return torch.cat(
+        flat_gradients
+    )
+
+def set_f_probe_seed(seed):
+
+    random.seed(seed)
+    np.random.seed(seed)
+
+    torch.manual_seed(seed)
+
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+# ============================================================
+# Experiment F-E：Build Probe Samples
+# ============================================================
+
+def build_f_e_probe_samples(
+    train_data,
+    popular_items,
+    unpopular_seen_items,
+    low_threshold,
+    high_threshold,
+    samples_per_state,
+    random_seed
+):
+    """
+    從 Inner Train 中：
+
+    1. 只保留 Unpopular-Next
+    2. 依 Sequence Popular Ratio
+       分 Low / Medium / High
+    3. 每組固定抽 samples_per_state 筆
+    """
+
+    state_indices = {
+        'low': [],
+        'medium': [],
+        'high': []
+    }
+
+    for index, row in train_data.iterrows():
+
+        target_item = int(
+            row['next']
+        )
+
+        # ----------------------------------------
+        # Experiment E controlled condition:
+        # Next = Unpopular
+        # ----------------------------------------
+
+        if (
+            target_item
+            not in unpopular_seen_items
+        ):
+            continue
+
+        sequence_ratio = (
+            calculate_sequence_popular_ratio(
+                row['seq'],
+                popular_items
+            )
+        )
+
+        if sequence_ratio < low_threshold:
+
+            state = 'low'
+
+        elif sequence_ratio < high_threshold:
+
+            state = 'medium'
+
+        else:
+
+            state = 'high'
+
+        state_indices[
+            state
+        ].append(index)
+
+    probe_data = {}
+
+    states = [
+        'low',
+        'medium',
+        'high'
+    ]
+
+    for state_offset, state in enumerate(states):
+
+        candidate_indices = (
+            state_indices[state]
+        )
+
+        if (
+            len(candidate_indices)
+            < samples_per_state
+        ):
+            raise ValueError(
+                f'Not enough {state} samples. '
+                f'Available='
+                f'{len(candidate_indices)}, '
+                f'Requested='
+                f'{samples_per_state}'
+            )
+
+        rng = np.random.RandomState(
+            random_seed
+            + state_offset
+        )
+
+        selected_indices = (
+            rng.choice(
+                candidate_indices,
+                size=samples_per_state,
+                replace=False
+            )
+        )
+
+        probe_data[state] = (
+            train_data
+            .loc[selected_indices]
+            .copy()
+            .reset_index(drop=True)
+        )
+
+    return probe_data
+
+# ============================================================
+# Experiment F-E：Build Meta Gradients
+# ============================================================
+
+def build_f_meta_gradients(
+    model_joint,
+    meta_data,
+    popular_items,
+    args
+):
+    """
+    產生：
+
+        g_meta(M0)
+        g_meta(M1)
+        g_meta(M2)
+
+    第一版只看 Target item embedding gradient。
+    """
+
+    device = args.device
+
+    model_joint = (
+        model_joint.to(device)
+    )
+
+    model_joint.eval()
+
+    core_model = (
+        model_joint.module
+        if isinstance(
+            model_joint,
+            nn.DataParallel
+        )
+        else model_joint
+    )
+
+    # ========================================================
+    # 第一版 gradient probe parameter
+    # ========================================================
+
+    probe_parameters = [
+        core_model.target_embeddings.weight
+    ]
+
+    # ========================================================
+    # 固定一個 balanced Meta batch
+    # ========================================================
+
+    meta_batch = (
+        sample_balanced_meta_batch(
+            meta_data=meta_data,
+
+            popular_items=
+            popular_items,
+
+            batch_size=
+            args.f_meta_batch_size,
+
+            random_seed=
+            args.random_seed
+            + 700000
+        )
+    )
+
+    seq = torch.LongTensor(
+        meta_batch[
+            'seq'
+        ].tolist()
+    ).to(device)
+
+    target = (
+        torch.LongTensor(
+            meta_batch[
+                'next'
+            ].tolist()
+        )
+        .unsqueeze(1)
+        .to(device)
+    )
+
+    objective_names = [
+        'M0_balanced',
+        'M1_margin',
+        'M2_popmass'
+    ]
+
+    meta_gradient_info = {}
+
+    for objective_name in objective_names:
+
+        # ----------------------------------------
+        # 每個 objective 用同樣 stochastic seed
+        # ----------------------------------------
+
+        meta_seed = (
+            args.random_seed
+            + 800000
+        )
+
+        set_f_probe_seed(
+            meta_seed
+        )
+
+        model_joint.zero_grad(
+            set_to_none=True
+        )
+
+        (
+            _,
+            diffu_rep,
+            _,
+            _,
+            _,
+            _,
+            _
+        ) = model_joint(
+            seq,
+            target,
+            None,
+
+            False,      # pretrain_flag
+            args,
+            0,
+
+            train_flag=True
+        )
+
+        scores = (
+            core_model
+            .diffu_rep_pre(
+                diffu_rep,
+                False
+            )
+        )
+
+        objective_dict = (
+            compute_f_meta_objectives(
+                scores=scores,
+                targets=target,
+
+                popular_items=
+                popular_items,
+
+                margin_beta=
+                args.f_margin_beta,
+
+                popmass_gamma=
+                args.f_popmass_gamma
+            )
+        )
+
+        selected_loss = (
+            objective_dict[
+                objective_name
+            ]
+        )
+
+        gradient = (
+            get_flat_gradients(
+                selected_loss,
+                probe_parameters
+            )
+        )
+
+        gradient_norm = (
+            torch.norm(
+                gradient,
+                p=2
+            )
+        )
+
+        meta_gradient_info[
+            objective_name
+        ] = {
+
+            'gradient':
+                gradient,
+
+            # ------------------------------------
+            # 這個是後面主要使用的
+            # ------------------------------------
+            'normalized_gradient':
+                (
+                    gradient
+                    /
+                    (
+                        gradient_norm
+                        + 1e-12
+                    )
+                ),
+
+            'norm':
+                gradient_norm.item(),
+
+            'loss':
+                selected_loss.item()
+        }
+
+    return (
+        meta_gradient_info,
+        meta_batch
+    )
+
+# ============================================================
+# Experiment F-E：Sample Action Gradient
+# ============================================================
+
+def compute_f_sample_gradient(
+    model_joint,
+    regulated_df,
+    args,
+    random_seed
+):
+    """
+    對一筆 regulated Target sample
+    計算 CE gradient。
+
+    g_i^a = gradient of sample loss
+    """
+
+    device = args.device
+
+    model_joint = (
+        model_joint.to(device)
+    )
+
+    model_joint.eval()
+
+    core_model = (
+        model_joint.module
+        if isinstance(
+            model_joint,
+            nn.DataParallel
+        )
+        else model_joint
+    )
+
+    probe_parameters = [
+        core_model.target_embeddings.weight
+    ]
+
+    seq = torch.LongTensor(
+        regulated_df[
+            'seq'
+        ].tolist()
+    ).to(device)
+
+    target = (
+        torch.LongTensor(
+            regulated_df[
+                'next'
+            ].tolist()
+        )
+        .unsqueeze(1)
+        .to(device)
+    )
+
+    set_f_probe_seed(
+        random_seed
+    )
+
+    model_joint.zero_grad(
+        set_to_none=True
+    )
+
+    (
+        _,
+        diffu_rep,
+        _,
+        _,
+        _,
+        _,
+        _
+    ) = model_joint(
+        seq,
+        target,
+        None,
+
+        False,
+        args,
+        0,
+
+        train_flag=True
+    )
+
+    scores = (
+        core_model
+        .diffu_rep_pre(
+            diffu_rep,
+            False
+        )
+    )
+
+    # ========================================================
+    # sample gradient 不使用 M0/M1/M2
+    #
+    # 它只回答：
+    # 這個 regulated sample
+    # 自己會產生什麼 training direction？
+    # ========================================================
+
+    sample_loss = (
+        F.cross_entropy(
+            scores,
+            target.view(-1)
+        )
+    )
+
+    sample_gradient = (
+        get_flat_gradients(
+            sample_loss,
+            probe_parameters
+        )
+    )
+
+    return (
+        sample_gradient,
+        sample_loss.item()
+    )
+
+# ============================================================
+# Experiment F-E：Reward Calculation
+# ============================================================
+
+def compare_f_gradients(
+    meta_gradient_info,
+    sample_gradient
+):
+    """
+    比較：
+
+        g_meta
+        vs
+        g_i^a
+
+    同時輸出：
+        raw dot
+        cosine
+        normalized-meta utility
+    """
+
+    sample_norm = (
+        torch.norm(
+            sample_gradient,
+            p=2
+        )
+    )
+
+    results = {}
+
+    for (
+        objective_name,
+        meta_info
+    ) in meta_gradient_info.items():
+
+        meta_gradient = (
+            meta_info[
+                'gradient'
+            ]
+        )
+
+        normalized_meta_gradient = (
+            meta_info[
+                'normalized_gradient'
+            ]
+        )
+
+        # ====================================================
+        # Raw dot product
+        # 只做 diagnostic
+        # ====================================================
+
+        dot_product = (
+            torch.dot(
+                meta_gradient,
+                sample_gradient
+            )
+        )
+
+        # ====================================================
+        # Cosine
+        # 只看方向
+        # ====================================================
+
+        cosine_similarity = (
+            dot_product
+            /
+            (
+                torch.norm(
+                    meta_gradient,
+                    p=2
+                )
+                *
+                sample_norm
+                +
+                1e-12
+            )
+        )
+
+        # ====================================================
+        # Experiment F primary Reward
+        #
+        # normalize g_meta，
+        # 但保留 action gradient magnitude
+        # ====================================================
+
+        utility = (
+            torch.dot(
+                normalized_meta_gradient,
+                sample_gradient
+            )
+        )
+
+        results[
+            objective_name
+        ] = {
+
+            'utility':
+                utility.item(),
+
+            'dot':
+                dot_product.item(),
+
+            'cosine':
+                cosine_similarity.item(),
+
+            'sample_grad_norm':
+                sample_norm.item(),
+
+            'meta_grad_norm':
+                meta_info['norm']
+        }
+
+    return results
+
+# ============================================================
+# Experiment F-E：Offline Reward Validation
+# ============================================================
+
+def run_experiment_f_e_probe(
+    model_joint,
+    inner_train_data,
+    meta_data,
+    popularity_reference_data,
+    args,
+    logger
+):
+    """
+    Experiment F-E：
+
+    State:
+        Low / Medium / High Sequence Popularity
+
+    Action:
+        D2
+
+    Strength:
+        p = 0.1 / 0.2 / 0.4
+
+    Meta Objective:
+        M0 / M1 / M2
+
+    Output:
+        per-state × per-strength reward table
+    """
+
+    # ========================================================
+    # Popularity definition
+    # 保持跟 Experiment E 完全一致
+    # ========================================================
+
+    (
+        popular_items,
+        unpopular_seen_items,
+        _,
+        _
+    ) = build_item_popularity_groups(
+        popularity_reference_data,
+        popular_ratio=
+            args.popular_ratio
+    )
+
+    # ========================================================
+    # Build Probe Samples
+    # ========================================================
+
+    probe_data = (
+        build_f_e_probe_samples(
+            train_data=
+                inner_train_data,
+
+            popular_items=
+                popular_items,
+
+            unpopular_seen_items=
+                unpopular_seen_items,
+
+            low_threshold=
+                args.e_context_low_threshold,
+
+            high_threshold=
+                args.e_context_high_threshold,
+
+            samples_per_state=
+                args.f_probe_samples,
+
+            random_seed=
+                args.random_seed
+                + 1000000
+        )
+    )
+
+    probe_info = {
+        state:
+        len(data)
+        for state, data
+        in probe_data.items()
+    }
+
+    print(
+        'Experiment F-E Probe Samples'
+        '---------------------------------------------'
+    )
+
+    print(probe_info)
+
+    logger.info(
+        'Experiment F-E Probe Samples'
+    )
+
+    logger.info(
+        probe_info
+    )
+
+    # ========================================================
+    # Build Meta Gradients
+    # ========================================================
+
+    (
+        meta_gradient_info,
+        _
+    ) = build_f_meta_gradients(
+        model_joint=
+            model_joint,
+
+        meta_data=
+            meta_data,
+
+        popular_items=
+            popular_items,
+
+        args=args
+    )
+
+    print(
+        'Experiment F-E Meta Gradient'
+        '---------------------------------------------'
+    )
+
+    for objective_name, info in (
+        meta_gradient_info.items()
+    ):
+
+        print({
+            'Objective':
+                objective_name,
+
+            'Meta Loss':
+                round(
+                    info['loss'],
+                    6
+                ),
+
+            'Meta Grad Norm':
+                round(
+                    info['norm'],
+                    6
+                )
+        })
+
+    # ========================================================
+    # Probe
+    # ========================================================
+
+    strengths = [
+        0.1,
+        0.2,
+        0.4
+    ]
+
+    states = [
+        'low',
+        'medium',
+        'high'
+    ]
+
+    records = []
+
+    for state_index, state in enumerate(states):
+
+        state_df = (
+            probe_data[
+                state
+            ]
+        )
+
+        for sample_index in range(
+            len(state_df)
+        ):
+
+            original_df = (
+                state_df
+                .iloc[
+                    [sample_index]
+                ]
+                .copy()
+                .reset_index(
+                    drop=True
+                )
+            )
+
+            original_seq = (
+                original_df
+                .iloc[0]['seq']
+            )
+
+            seq_pop_ratio = (
+                calculate_sequence_popular_ratio(
+                    original_seq,
+                    popular_items
+                )
+            )
+
+            # ================================================
+            # 每個 repeat 共用 seed
+            #
+            # p=.1/.2/.4 使用同一 random stream，
+            # 比較才公平。
+            # ================================================
+
+            for repeat_index in range(
+                args.f_probe_repeats
+            ):
+
+                probe_seed = (
+                    args.random_seed
+                    + 1100000
+                    + state_index
+                      * 100000
+                    + sample_index
+                      * 100
+                    + repeat_index
+                )
+
+                for strength in strengths:
+
+                    (
+                        regulated_df,
+                        regulation_stats
+                    ) = (
+                        rule_based_tail_context_regulation(
+                            batch_df=
+                                original_df,
+
+                            popular_items=
+                                popular_items,
+
+                            unpopular_seen_items=
+                                unpopular_seen_items,
+
+                            context_state=
+                                state,
+
+                            low_threshold=
+                                args.e_context_low_threshold,
+
+                            high_threshold=
+                                args.e_context_high_threshold,
+
+                            max_len=
+                                args.max_len,
+
+                            # 保持 Experiment E 設定
+                            augmentation_probability=
+                                args.tail_aug_probability,
+
+                            drop_probability=
+                                strength,
+
+                            preserve_recent=
+                                args.tail_preserve_recent,
+
+                            random_seed=
+                                probe_seed
+                        )
+                    )
+
+                    # ----------------------------------------
+                    # Model forward 的 seed
+                    # 也固定，不依 strength 改變
+                    # ----------------------------------------
+
+                    model_seed = (
+                        probe_seed
+                        + 500000
+                    )
+
+                    (
+                        sample_gradient,
+                        sample_loss
+                    ) = (
+                        compute_f_sample_gradient(
+                            model_joint=
+                                model_joint,
+
+                            regulated_df=
+                                regulated_df,
+
+                            args=args,
+
+                            random_seed=
+                                model_seed
+                        )
+                    )
+
+                    reward_result = (
+                        compare_f_gradients(
+                            meta_gradient_info=
+                                meta_gradient_info,
+
+                            sample_gradient=
+                                sample_gradient
+                        )
+                    )
+
+                    for (
+                        objective_name,
+                        reward_info
+                    ) in reward_result.items():
+
+                        records.append({
+
+                            'meta_objective':
+                                objective_name,
+
+                            'state':
+                                state,
+
+                            'sample_index':
+                                sample_index,
+
+                            'seq_pop_ratio':
+                                seq_pop_ratio,
+
+                            'strength':
+                                strength,
+
+                            'repeat':
+                                repeat_index,
+
+                            'sample_loss':
+                                sample_loss,
+
+                            'utility':
+                                reward_info[
+                                    'utility'
+                                ],
+
+                            'dot':
+                                reward_info[
+                                    'dot'
+                                ],
+
+                            'cosine':
+                                reward_info[
+                                    'cosine'
+                                ],
+
+                            'sample_grad_norm':
+                                reward_info[
+                                    'sample_grad_norm'
+                                ],
+
+                            'meta_grad_norm':
+                                reward_info[
+                                    'meta_grad_norm'
+                                ],
+
+                            'augmented':
+                                regulation_stats[
+                                    'augmented_samples'
+                                ],
+
+                            'dropped_items':
+                                regulation_stats[
+                                    'dropped_items'
+                                ]
+                        })
+
+    # ========================================================
+    # Aggregate
+    # ========================================================
+
+    result_df = pd.DataFrame(
+        records
+    )
+
+    summary_df = (
+        result_df
+        .groupby(
+            [
+                'meta_objective',
+                'state',
+                'strength'
+            ],
+            as_index=False
+        )
+        .agg(
+            utility_mean=(
+                'utility',
+                'mean'
+            ),
+
+            utility_std=(
+                'utility',
+                'std'
+            ),
+
+            cosine_mean=(
+                'cosine',
+                'mean'
+            ),
+
+            sample_grad_norm_mean=(
+                'sample_grad_norm',
+                'mean'
+            ),
+
+            sample_loss_mean=(
+                'sample_loss',
+                'mean'
+            ),
+
+            augmentation_rate=(
+                'augmented',
+                'mean'
+            ),
+
+            dropped_items_mean=(
+                'dropped_items',
+                'mean'
+            )
+        )
+    )
+
+    # ========================================================
+    # Print
+    # ========================================================
+
+    for objective_name in [
+        'M0_balanced',
+        'M1_margin',
+        'M2_popmass'
+    ]:
+
+        objective_summary = (
+            summary_df[
+                summary_df[
+                    'meta_objective'
+                ]
+                ==
+                objective_name
+            ]
+        )
+
+        print(
+            '\nExperiment F-E Reward Summary'
+            '---------------------------------------------'
+        )
+
+        print(
+            'Meta Objective:',
+            objective_name
+        )
+
+        print(
+            objective_summary[
+                [
+                    'state',
+                    'strength',
+                    'utility_mean',
+                    'utility_std',
+                    'cosine_mean',
+                    'augmentation_rate',
+                    'dropped_items_mean'
+                ]
+            ].to_string(
+                index=False
+            )
+        )
+
+        logger.info(
+            'Experiment F-E Reward Summary'
+        )
+
+        logger.info(
+            objective_name
+        )
+
+        logger.info(
+            objective_summary.to_dict(
+                orient='records'
+            )
+        )
+
+    # ========================================================
+    # Save raw + summary
+    # ========================================================
+
+    output_dir = os.path.join(
+        args.log_file,
+        args.s_dataset
+        + '_'
+        + args.t_dataset
+    )
+
+    os.makedirs(
+        output_dir,
+        exist_ok=True
+    )
+
+    timestamp = time.strftime(
+        "%Y-%m-%d_%H-%M-%S",
+        time.localtime()
+    )
+
+    raw_path = os.path.join(
+        output_dir,
+        'experiment_f_e_raw_'
+        + timestamp
+        + '.csv'
+    )
+
+    summary_path = os.path.join(
+        output_dir,
+        'experiment_f_e_summary_'
+        + timestamp
+        + '.csv'
+    )
+
+    result_df.to_csv(
+        raw_path,
+        index=False
+    )
+
+    summary_df.to_csv(
+        summary_path,
+        index=False
+    )
+
+    print(
+        '\nExperiment F-E raw result saved at:',
+        raw_path
+    )
+
+    print(
+        'Experiment F-E summary saved at:',
+        summary_path
+    )
+
+    return summary_df
 
 # ============================================================
 # Experiment E：State Distribution Inspection

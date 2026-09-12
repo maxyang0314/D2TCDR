@@ -7,7 +7,7 @@ import numpy as np
 import logging
 import time
 from model import create_model_diffu, Att_Diffuse_model
-from trainer import model_train,analyze_e_sequence_popularity_distribution, split_target_train_meta_data, run_experiment_f_meta_check
+from trainer import model_train,analyze_e_sequence_popularity_distribution, split_target_train_meta_data, run_experiment_f_meta_check, run_experiment_f_e_probe
 import pandas as pd
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
@@ -52,6 +52,9 @@ parser.add_argument('--f_meta_ratio', type=float, default=0.1, help='Ratio of Ta
 parser.add_argument('--f_meta_batch_size', type=int, default=64, help='Balanced Popular/Tail meta batch size')
 parser.add_argument('--f_margin_beta', type=float, default=0.25, help='Weight of Tail margin term in M1')
 parser.add_argument('--f_popmass_gamma', type=float, default=0.25, help='Weight of Popular probability mass term in M2')
+parser.add_argument('--f_run_probe', type=int, default=0, choices=[0, 1], help='Run Experiment F-E offline D2 reward probe')
+parser.add_argument('--f_probe_samples', type=int, default=32, help='Number of probe samples for each Low/Medium/High state')
+parser.add_argument('--f_probe_repeats', type=int, default=3, help='Repeated D2 masking trials for each sample and strength')
 parser.add_argument('--optimizer', type=str, default='Adam', choices=['SGD', 'Adam'])
 parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
 parser.add_argument('--loss_lambda', type=float, default=1, help='loss weight for diffusion')
@@ -363,6 +366,35 @@ def main(args):
             )
         )
 
+        # ============================================================
+    # Experiment F-E：Offline Reward Validation
+    # ============================================================
+
+    if (
+        args.experiment_f == 1
+        and args.f_run_probe == 1
+    ):
+
+        f_e_summary = (
+            run_experiment_f_e_probe(
+                model_joint=
+                    best_model,
+
+                inner_train_data=
+                    t_inner_data,
+
+                meta_data=
+                    t_meta_data,
+
+                popularity_reference_data=
+                    t_full_train_data,
+
+                args=args,
+
+                logger=logger
+            )
+        )
+        
         print(
             'Experiment F Meta Objective Check Finished'
             '---------------------------------------------'
