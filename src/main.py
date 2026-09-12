@@ -7,7 +7,7 @@ import numpy as np
 import logging
 import time
 from model import create_model_diffu, Att_Diffuse_model
-from trainer import model_train,analyze_e_sequence_popularity_distribution, split_target_train_meta_data, run_experiment_f_meta_check, run_experiment_f_e_probe
+from trainer import model_train,analyze_e_sequence_popularity_distribution, split_target_train_meta_data, run_experiment_f_meta_check, run_experiment_f_e_probe, run_experiment_f_e_virtual_probe
 import pandas as pd
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
@@ -56,6 +56,8 @@ parser.add_argument('--f_run_probe', type=int, default=0, choices=[0, 1], help='
 parser.add_argument('--f_probe_samples', type=int, default=32, help='Number of probe samples for each Low/Medium/High state')
 parser.add_argument('--f_probe_repeats', type=int, default=3, help='Repeated D2 masking trials for each sample and strength')
 parser.add_argument( '--f_probe_space', type=str, default='representation', choices=['output', 'representation', 'combined'],help=( 'Gradient parameter space for Experiment F-E: ' 'output=target embedding only, ' 'representation=sequence representation layers, ' 'combined=both'))
+parser.add_argument('--f_reward_mode', type=str, default='virtual', choices=['gradient', 'virtual'], help=('Reward mode for Experiment F-E: ' 'gradient=old gradient alignment, ' 'virtual=virtual one-step meta improvement'))
+parser.add_argument('--f_virtual_lr', type=float, default=0.001, help='Virtual one-step learning rate for Experiment F-E v4')
 parser.add_argument('--optimizer', type=str, default='Adam', choices=['SGD', 'Adam'])
 parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
 parser.add_argument('--loss_lambda', type=float, default=1, help='loss weight for diffusion')
@@ -376,6 +378,33 @@ def main(args):
         and args.f_run_probe == 1
     ):
 
+        if args.f_reward_mode == 'virtual':
+
+            (
+                f_e_summary,
+                f_e_paired_summary
+            ) = (
+                run_experiment_f_e_virtual_probe(
+                    model_joint=
+                        best_model,
+
+                    inner_train_data=
+                        t_inner_data,
+
+                    meta_data=
+                        t_meta_data,
+
+                    popularity_reference_data=
+                        t_full_train_data,
+
+                    args=args,
+
+                    logger=logger
+                )
+            )
+
+    else:
+
         f_e_summary = (
             run_experiment_f_e_probe(
                 model_joint=
@@ -395,7 +424,6 @@ def main(args):
                 logger=logger
             )
         )
-
         print(
             'Experiment F Meta Objective Check Finished'
             '---------------------------------------------'

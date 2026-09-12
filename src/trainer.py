@@ -570,6 +570,124 @@ def compute_f_meta_objectives(
             m2_loss
     }
 
+# ============================================================
+# Experiment F-E v4：
+# Evaluate Meta Objectives under current model parameters
+# ============================================================
+
+def evaluate_f_meta_losses(
+    model_joint,
+    meta_batch,
+    popular_items,
+    args,
+    random_seed
+):
+    """
+    在目前 model parameters 下，
+    用固定 Meta batch 計算：
+
+        M0
+        M1
+        M2
+
+    此 function 不更新 model。
+    """
+
+    device = args.device
+
+    model_joint = model_joint.to(device)
+    model_joint.eval()
+
+    core_model = (
+        model_joint.module
+        if isinstance(
+            model_joint,
+            nn.DataParallel
+        )
+        else model_joint
+    )
+
+    seq = torch.LongTensor(
+        meta_batch['seq'].tolist()
+    ).to(device)
+
+    target = (
+        torch.LongTensor(
+            meta_batch['next'].tolist()
+        )
+        .unsqueeze(1)
+        .to(device)
+    )
+
+    # ----------------------------------------
+    # 固定 stochastic process
+    # ----------------------------------------
+
+    set_f_probe_seed(
+        random_seed
+    )
+
+    model_joint.zero_grad(
+        set_to_none=True
+    )
+
+    with torch.no_grad():
+
+        (
+            _,
+            diffu_rep,
+            _,
+            _,
+            _,
+            _,
+            _
+        ) = model_joint(
+            seq,
+            target,
+            None,
+            False,
+            args,
+            0,
+            train_flag=True
+        )
+
+        scores = (
+            core_model
+            .diffu_rep_pre(
+                diffu_rep,
+                False
+            )
+        )
+
+        objective_dict = (
+            compute_f_meta_objectives(
+                scores=scores,
+                targets=target,
+                popular_items=popular_items,
+                margin_beta=
+                    args.f_margin_beta,
+                popmass_gamma=
+                    args.f_popmass_gamma
+            )
+        )
+
+    return {
+        'M0_balanced':
+            objective_dict[
+                'M0_balanced'
+            ].item(),
+
+        'M1_margin':
+            objective_dict[
+                'M1_margin'
+            ].item(),
+
+        'M2_popmass':
+            objective_dict[
+                'M2_popmass'
+            ].item()
+    }
+
 def calculate_gradient_l2_norm(
     loss,
     model
@@ -621,6 +739,168 @@ def calculate_gradient_l2_norm(
             total_squared_norm
         )
         .item()
+    )
+
+# ============================================================
+# Experiment F-E v4：
+# Compute per-sample parameter gradients
+# ============================================================
+
+def compute_f_sample_parameter_gradients(
+    model_joint,
+    regulated_df,
+    args,
+    random_seed
+):
+    """
+    對一筆 regulated sample 計算：
+
+        L_i^a
+        g_i^a = gradient(L_i^a)
+
+    不 flatten gradient，
+    因為等一下要真的對 parameters 做 virtual update。
+    """
+
+    device = args.device
+
+    model_joint = model_joint.to(device)
+    model_joint.eval()
+
+    core_model = (
+        model_joint.module
+        if isinstance(
+            model_joint,
+            nn.DataParallel
+        )
+        else model_joint
+    )
+
+    # ========================================================
+    # 沿用 v3 的 probe parameter space
+    # ========================================================
+
+    (
+        probe_parameters,
+        probe_parameter_names,
+        probe_parameter_count
+    ) = get_f_probe_parameters(
+        model_joint=model_joint,
+        probe_space=args.f_probe_space
+    )
+
+    seq = torch.LongTensor(
+        regulated_df[
+            'seq'
+        ].tolist()
+    ).to(device)
+
+    target = (
+        torch.LongTensor(
+            regulated_df[
+                'next'
+            ].tolist()
+        )
+        .unsqueeze(1)
+        .to(device)
+    )
+
+    set_f_probe_seed(
+        random_seed
+    )
+
+    model_joint.zero_grad(
+        set_to_none=True
+    )
+
+    (
+        _,
+        diffu_rep,
+        _,
+        _,
+        _,
+        _,
+        _
+    ) = model_joint(
+        seq,
+        target,
+        None,
+        False,
+        args,
+        0,
+        train_flag=True
+    )
+
+    scores = (
+        core_model
+        .diffu_rep_pre(
+            diffu_rep,
+            False
+        )
+    )
+
+    sample_loss = (
+        F.cross_entropy(
+            scores,
+            target.view(-1)
+        )
+    )
+
+    gradients = torch.autograd.grad(
+        sample_loss,
+        probe_parameters,
+        retain_graph=False,
+        create_graph=False,
+        allow_unused=True
+    )
+
+    cleaned_gradients = []
+
+    total_squared_norm = 0.0
+
+    for (
+        parameter,
+        gradient
+    ) in zip(
+        probe_parameters,
+        gradients
+    ):
+
+        if gradient is None:
+
+            gradient = (
+                torch.zeros_like(
+                    parameter
+                )
+            )
+
+        gradient = (
+            gradient
+            .detach()
+            .clone()
+        )
+
+        cleaned_gradients.append(
+            gradient
+        )
+
+        total_squared_norm += (
+            gradient
+            .pow(2)
+            .sum()
+            .item()
+        )
+
+    gradient_norm = (
+        total_squared_norm
+        ** 0.5
+    )
+
+    return (
+        probe_parameters,
+        cleaned_gradients,
+        sample_loss.item(),
+        gradient_norm
     )
 
 # ============================================================
@@ -1080,6 +1360,230 @@ def get_f_probe_parameters(
         parameter_names,
         total_parameter_count
     )
+
+# ============================================================
+# Experiment F-E v4：
+# Virtual One-Step Meta Improvement
+# ============================================================
+
+def compute_f_virtual_meta_reward(
+    model_joint,
+    probe_parameters,
+    sample_gradients,
+    baseline_meta_losses,
+    meta_batch,
+    popular_items,
+    args,
+    meta_random_seed
+):
+    """
+    1. 暫存原始 parameters
+    2. virtual update:
+           theta' = theta - eta * gradient
+    3. 計算更新後 Meta Loss
+    4. Reward:
+           L_meta(theta) - L_meta(theta')
+    5. 完整恢復原始 parameters
+
+    注意：
+        不做 optimizer.step()
+        不永久修改 Reference Model。
+    """
+
+    virtual_lr = (
+        args.f_virtual_lr
+    )
+
+    # ========================================================
+    # Backup
+    # ========================================================
+
+    parameter_backups = [
+        parameter
+        .detach()
+        .clone()
+
+        for parameter
+        in probe_parameters
+    ]
+
+    # ========================================================
+    # Diagnostics
+    # ========================================================
+
+    parameter_squared_norm = 0.0
+    gradient_squared_norm = 0.0
+
+    for (
+        parameter,
+        gradient
+    ) in zip(
+        probe_parameters,
+        sample_gradients
+    ):
+
+        parameter_squared_norm += (
+            parameter
+            .detach()
+            .pow(2)
+            .sum()
+            .item()
+        )
+
+        gradient_squared_norm += (
+            gradient
+            .pow(2)
+            .sum()
+            .item()
+        )
+
+    parameter_norm = (
+        parameter_squared_norm
+        ** 0.5
+    )
+
+    gradient_norm = (
+        gradient_squared_norm
+        ** 0.5
+    )
+
+    virtual_step_norm = (
+        virtual_lr
+        * gradient_norm
+    )
+
+    relative_step = (
+        virtual_step_norm
+        /
+        (
+            parameter_norm
+            + 1e-12
+        )
+    )
+
+    try:
+
+        # ====================================================
+        # Virtual Update
+        # ====================================================
+
+        with torch.no_grad():
+
+            for (
+                parameter,
+                gradient
+            ) in zip(
+                probe_parameters,
+                sample_gradients
+            ):
+
+                parameter.add_(
+                    gradient,
+                    alpha=-virtual_lr
+                )
+
+        # ====================================================
+        # Evaluate Meta Loss after virtual update
+        # ====================================================
+
+        updated_meta_losses = (
+            evaluate_f_meta_losses(
+                model_joint=
+                    model_joint,
+
+                meta_batch=
+                    meta_batch,
+
+                popular_items=
+                    popular_items,
+
+                args=args,
+
+                random_seed=
+                    meta_random_seed
+            )
+        )
+
+    finally:
+
+        # ====================================================
+        # Restore original Reference Model
+        # ====================================================
+
+        with torch.no_grad():
+
+            for (
+                parameter,
+                backup
+            ) in zip(
+                probe_parameters,
+                parameter_backups
+            ):
+
+                parameter.copy_(
+                    backup
+                )
+
+    # ========================================================
+    # Reward
+    #
+    # Positive:
+    # virtual update improves Meta objective
+    #
+    # Negative:
+    # virtual update harms Meta objective
+    # ========================================================
+
+    reward_result = {}
+
+    for objective_name in [
+        'M0_balanced',
+        'M1_margin',
+        'M2_popmass'
+    ]:
+
+        before_loss = (
+            baseline_meta_losses[
+                objective_name
+            ]
+        )
+
+        after_loss = (
+            updated_meta_losses[
+                objective_name
+            ]
+        )
+
+        reward = (
+            before_loss
+            - after_loss
+        )
+
+        reward_result[
+            objective_name
+        ] = {
+
+            'reward':
+                reward,
+
+            'meta_before':
+                before_loss,
+
+            'meta_after':
+                after_loss,
+
+            'meta_delta':
+                after_loss
+                - before_loss,
+
+            'virtual_step_norm':
+                virtual_step_norm,
+
+            'relative_step':
+                relative_step
+        }
+
+    return reward_result
 
 # ============================================================
 # Experiment F-E：Gradient Utilities
@@ -2442,6 +2946,752 @@ def run_experiment_f_e_probe(
     )
 
     return summary_df
+
+# ============================================================
+# Experiment F-E v4：
+# Virtual One-Step Reward Validation
+# ============================================================
+
+def run_experiment_f_e_virtual_probe(
+    model_joint,
+    inner_train_data,
+    meta_data,
+    popularity_reference_data,
+    args,
+    logger
+):
+    """
+    State:
+        Low / Medium / High
+
+    Action:
+        D2
+
+    Strength:
+        p = 0.1 / 0.2 / 0.4
+
+    Reward:
+        MetaLoss(theta)
+        -
+        MetaLoss(theta - eta * grad(L_i^a))
+    """
+
+    # ========================================================
+    # Popularity definition
+    # ========================================================
+
+    (
+        popular_items,
+        unpopular_seen_items,
+        _,
+        _
+    ) = build_item_popularity_groups(
+        popularity_reference_data,
+        popular_ratio=
+            args.popular_ratio
+    )
+
+    # ========================================================
+    # Probe Samples
+    # ========================================================
+
+    probe_data = (
+        build_f_e_probe_samples(
+            train_data=
+                inner_train_data,
+
+            popular_items=
+                popular_items,
+
+            unpopular_seen_items=
+                unpopular_seen_items,
+
+            low_threshold=
+                args.e_context_low_threshold,
+
+            high_threshold=
+                args.e_context_high_threshold,
+
+            samples_per_state=
+                args.f_probe_samples,
+
+            random_seed=
+                args.random_seed
+                + 1000000
+        )
+    )
+
+    print(
+        'Experiment F-E v4 Probe Samples'
+        '---------------------------------------------'
+    )
+
+    print({
+        state:
+            len(data)
+        for state, data
+        in probe_data.items()
+    })
+
+    # ========================================================
+    # Fixed balanced Meta Batch
+    # ========================================================
+
+    meta_batch = (
+        sample_balanced_meta_batch(
+            meta_data=
+                meta_data,
+
+            popular_items=
+                popular_items,
+
+            batch_size=
+                args.f_meta_batch_size,
+
+            random_seed=
+                args.random_seed
+                + 700000
+        )
+    )
+
+    # ========================================================
+    # Fixed Meta evaluation randomness
+    # ========================================================
+
+    meta_random_seed = (
+        args.random_seed
+        + 800000
+    )
+
+    # ========================================================
+    # Baseline Meta Loss:
+    # L_meta(theta)
+    # ========================================================
+
+    baseline_meta_losses = (
+        evaluate_f_meta_losses(
+            model_joint=
+                model_joint,
+
+            meta_batch=
+                meta_batch,
+
+            popular_items=
+                popular_items,
+
+            args=args,
+
+            random_seed=
+                meta_random_seed
+        )
+    )
+
+    print(
+        'Experiment F-E v4 Baseline Meta Loss'
+        '---------------------------------------------'
+    )
+
+    print(
+        baseline_meta_losses
+    )
+
+    logger.info(
+        'Experiment F-E v4 Baseline Meta Loss'
+    )
+
+    logger.info(
+        baseline_meta_losses
+    )
+
+    # ========================================================
+    # Probe parameter info
+    # ========================================================
+
+    (
+        probe_parameters_check,
+        probe_names,
+        probe_count
+    ) = get_f_probe_parameters(
+        model_joint=
+            model_joint,
+
+        probe_space=
+            args.f_probe_space
+    )
+
+    print(
+        'Experiment F-E v4 Probe Space'
+        '---------------------------------------------'
+    )
+
+    print({
+        'Probe Space':
+            args.f_probe_space,
+
+        'Parameter Tensors':
+            len(
+                probe_parameters_check
+            ),
+
+        'Total Parameters':
+            probe_count,
+
+        'Virtual LR':
+            args.f_virtual_lr
+    })
+
+    # ========================================================
+    # Offline Action Probe
+    # ========================================================
+
+    strengths = [
+        0.1,
+        0.2,
+        0.4
+    ]
+
+    states = [
+        'low',
+        'medium',
+        'high'
+    ]
+
+    records = []
+
+    for (
+        state_index,
+        state
+    ) in enumerate(states):
+
+        state_df = (
+            probe_data[state]
+        )
+
+        for sample_index in range(
+            len(state_df)
+        ):
+
+            original_df = (
+                state_df
+                .iloc[
+                    [sample_index]
+                ]
+                .copy()
+                .reset_index(
+                    drop=True
+                )
+            )
+
+            original_seq = (
+                original_df
+                .iloc[0]['seq']
+            )
+
+            seq_pop_ratio = (
+                calculate_sequence_popular_ratio(
+                    original_seq,
+                    popular_items
+                )
+            )
+
+            for repeat_index in range(
+                args.f_probe_repeats
+            ):
+
+                probe_seed = (
+                    args.random_seed
+                    + 1100000
+                    + state_index
+                      * 100000
+                    + sample_index
+                      * 100
+                    + repeat_index
+                )
+
+                for strength in strengths:
+
+                    # ========================================
+                    # D2 Action
+                    # ========================================
+
+                    (
+                        regulated_df,
+                        regulation_stats
+                    ) = (
+                        rule_based_tail_context_regulation(
+                            batch_df=
+                                original_df,
+
+                            popular_items=
+                                popular_items,
+
+                            unpopular_seen_items=
+                                unpopular_seen_items,
+
+                            context_state=
+                                state,
+
+                            low_threshold=
+                                args.e_context_low_threshold,
+
+                            high_threshold=
+                                args.e_context_high_threshold,
+
+                            max_len=
+                                args.max_len,
+
+                            # v4:
+                            # action 已經被選擇，
+                            # 所以必定執行 D2
+                            augmentation_probability=
+                                1.0,
+
+                            drop_probability=
+                                strength,
+
+                            preserve_recent=
+                                args.tail_preserve_recent,
+
+                            random_seed=
+                                probe_seed
+                        )
+                    )
+
+                    model_seed = (
+                        probe_seed
+                        + 500000
+                    )
+
+                    # ========================================
+                    # g_i^a
+                    # ========================================
+
+                    (
+                        probe_parameters,
+                        sample_gradients,
+                        sample_loss,
+                        sample_grad_norm
+                    ) = (
+                        compute_f_sample_parameter_gradients(
+                            model_joint=
+                                model_joint,
+
+                            regulated_df=
+                                regulated_df,
+
+                            args=args,
+
+                            random_seed=
+                                model_seed
+                        )
+                    )
+
+                    # ========================================
+                    # Virtual update + Meta Reward
+                    # ========================================
+
+                    reward_result = (
+                        compute_f_virtual_meta_reward(
+                            model_joint=
+                                model_joint,
+
+                            probe_parameters=
+                                probe_parameters,
+
+                            sample_gradients=
+                                sample_gradients,
+
+                            baseline_meta_losses=
+                                baseline_meta_losses,
+
+                            meta_batch=
+                                meta_batch,
+
+                            popular_items=
+                                popular_items,
+
+                            args=args,
+
+                            meta_random_seed=
+                                meta_random_seed
+                        )
+                    )
+
+                    for (
+                        objective_name,
+                        reward_info
+                    ) in (
+                        reward_result.items()
+                    ):
+
+                        records.append({
+
+                            'meta_objective':
+                                objective_name,
+
+                            'state':
+                                state,
+
+                            'sample_index':
+                                sample_index,
+
+                            'seq_pop_ratio':
+                                seq_pop_ratio,
+
+                            'strength':
+                                strength,
+
+                            'repeat':
+                                repeat_index,
+
+                            'sample_loss':
+                                sample_loss,
+
+                            'sample_grad_norm':
+                                sample_grad_norm,
+
+                            'reward':
+                                reward_info[
+                                    'reward'
+                                ],
+
+                            'meta_before':
+                                reward_info[
+                                    'meta_before'
+                                ],
+
+                            'meta_after':
+                                reward_info[
+                                    'meta_after'
+                                ],
+
+                            'meta_delta':
+                                reward_info[
+                                    'meta_delta'
+                                ],
+
+                            'virtual_step_norm':
+                                reward_info[
+                                    'virtual_step_norm'
+                                ],
+
+                            'relative_step':
+                                reward_info[
+                                    'relative_step'
+                                ],
+
+                            'augmented':
+                                regulation_stats[
+                                    'augmented_samples'
+                                ],
+
+                            'dropped_items':
+                                regulation_stats[
+                                    'dropped_items'
+                                ]
+                        })
+
+    # ========================================================
+    # DataFrame
+    # ========================================================
+
+    result_df = pd.DataFrame(
+        records
+    )
+
+    # ========================================================
+    # Aggregate
+    # ========================================================
+
+    summary_df = (
+        result_df
+        .groupby(
+            [
+                'meta_objective',
+                'state',
+                'strength'
+            ],
+            as_index=False
+        )
+        .agg(
+
+            reward_mean=(
+                'reward',
+                'mean'
+            ),
+
+            reward_std=(
+                'reward',
+                'std'
+            ),
+
+            meta_after_mean=(
+                'meta_after',
+                'mean'
+            ),
+
+            sample_grad_norm_mean=(
+                'sample_grad_norm',
+                'mean'
+            ),
+
+            virtual_step_norm_mean=(
+                'virtual_step_norm',
+                'mean'
+            ),
+
+            relative_step_mean=(
+                'relative_step',
+                'mean'
+            ),
+
+            dropped_items_mean=(
+                'dropped_items',
+                'mean'
+            )
+        )
+    )
+
+    # ========================================================
+    # Paired comparison
+    # ========================================================
+
+    paired_df = (
+        result_df
+        .pivot_table(
+            index=[
+                'meta_objective',
+                'state',
+                'sample_index',
+                'repeat'
+            ],
+
+            columns='strength',
+
+            values='reward',
+
+            aggfunc='mean'
+        )
+        .reset_index()
+    )
+
+    paired_df[
+        'delta_02_vs_01'
+    ] = (
+        paired_df[0.2]
+        - paired_df[0.1]
+    )
+
+    paired_df[
+        'delta_02_vs_04'
+    ] = (
+        paired_df[0.2]
+        - paired_df[0.4]
+    )
+
+    paired_df[
+        'delta_04_vs_01'
+    ] = (
+        paired_df[0.4]
+        - paired_df[0.1]
+    )
+
+    paired_rows = []
+
+    for (
+        objective_name,
+        state
+    ), group in paired_df.groupby(
+        [
+            'meta_objective',
+            'state'
+        ]
+    ):
+
+        paired_rows.append({
+
+            'meta_objective':
+                objective_name,
+
+            'state':
+                state,
+
+            'delta_02_vs_01_mean':
+                group[
+                    'delta_02_vs_01'
+                ].mean(),
+
+            'delta_02_vs_04_mean':
+                group[
+                    'delta_02_vs_04'
+                ].mean(),
+
+            'delta_04_vs_01_mean':
+                group[
+                    'delta_04_vs_01'
+                ].mean(),
+
+            'p02_beats_p01':
+                (
+                    group[
+                        'delta_02_vs_01'
+                    ]
+                    > 0
+                ).mean(),
+
+            'p02_beats_p04':
+                (
+                    group[
+                        'delta_02_vs_04'
+                    ]
+                    > 0
+                ).mean(),
+
+            'p04_beats_p01':
+                (
+                    group[
+                        'delta_04_vs_01'
+                    ]
+                    > 0
+                ).mean()
+        })
+
+    paired_summary_df = (
+        pd.DataFrame(
+            paired_rows
+        )
+    )
+
+    # ========================================================
+    # Print results
+    # ========================================================
+
+    for objective_name in [
+        'M0_balanced',
+        'M1_margin',
+        'M2_popmass'
+    ]:
+
+        print(
+            '\nExperiment F-E v4 Reward Summary'
+            '---------------------------------------------'
+        )
+
+        print(
+            'Meta Objective:',
+            objective_name
+        )
+
+        print(
+            summary_df[
+                summary_df[
+                    'meta_objective'
+                ]
+                ==
+                objective_name
+            ][
+                [
+                    'state',
+                    'strength',
+                    'reward_mean',
+                    'reward_std',
+                    'meta_after_mean',
+                    'virtual_step_norm_mean',
+                    'relative_step_mean',
+                    'dropped_items_mean'
+                ]
+            ].to_string(
+                index=False
+            )
+        )
+
+    print(
+        '\nExperiment F-E v4 Paired Reward Comparison'
+        '---------------------------------------------'
+    )
+
+    print(
+        paired_summary_df.to_string(
+            index=False
+        )
+    )
+
+    # ========================================================
+    # Save
+    # ========================================================
+
+    output_dir = os.path.join(
+        args.log_file,
+        args.s_dataset
+        + '_'
+        + args.t_dataset
+    )
+
+    os.makedirs(
+        output_dir,
+        exist_ok=True
+    )
+
+    timestamp = time.strftime(
+        "%Y-%m-%d_%H-%M-%S",
+        time.localtime()
+    )
+
+    raw_path = os.path.join(
+        output_dir,
+        'experiment_f_e_v4_raw_'
+        + timestamp
+        + '.csv'
+    )
+
+    summary_path = os.path.join(
+        output_dir,
+        'experiment_f_e_v4_summary_'
+        + timestamp
+        + '.csv'
+    )
+
+    paired_path = os.path.join(
+        output_dir,
+        'experiment_f_e_v4_paired_'
+        + timestamp
+        + '.csv'
+    )
+
+    result_df.to_csv(
+        raw_path,
+        index=False
+    )
+
+    summary_df.to_csv(
+        summary_path,
+        index=False
+    )
+
+    paired_summary_df.to_csv(
+        paired_path,
+        index=False
+    )
+
+    print(
+        '\nExperiment F-E v4 raw saved at:',
+        raw_path
+    )
+
+    print(
+        'Experiment F-E v4 summary saved at:',
+        summary_path
+    )
+
+    print(
+        'Experiment F-E v4 paired saved at:',
+        paired_path
+    )
+
+    return (
+        summary_df,
+        paired_summary_df
+    )
 
 # ============================================================
 # Experiment E：State Distribution Inspection
