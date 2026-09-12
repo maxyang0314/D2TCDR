@@ -55,6 +55,7 @@ parser.add_argument('--f_popmass_gamma', type=float, default=0.25, help='Weight 
 parser.add_argument('--f_run_probe', type=int, default=0, choices=[0, 1], help='Run Experiment F-E offline D2 reward probe')
 parser.add_argument('--f_probe_samples', type=int, default=32, help='Number of probe samples for each Low/Medium/High state')
 parser.add_argument('--f_probe_repeats', type=int, default=3, help='Repeated D2 masking trials for each sample and strength')
+parser.add_argument( '--f_probe_space', type=str, default='representation', choices=['output', 'representation', 'combined'],help=( 'Gradient parameter space for Experiment F-E: ' 'output=target embedding only, ' 'representation=sequence representation layers, ' 'combined=both'))
 parser.add_argument('--optimizer', type=str, default='Adam', choices=['SGD', 'Adam'])
 parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
 parser.add_argument('--loss_lambda', type=float, default=1, help='loss weight for diffusion')
@@ -394,7 +395,7 @@ def main(args):
                 logger=logger
             )
         )
-        
+
         print(
             'Experiment F Meta Objective Check Finished'
             '---------------------------------------------'

@@ -922,6 +922,166 @@ def run_experiment_f_meta_check(
     return results
 
 # ============================================================
+# Experiment F-E v3：
+# Gradient Probe Parameter Space
+# ============================================================
+
+def get_f_probe_parameters(
+    model_joint,
+    probe_space='representation'
+):
+    """
+    Experiment F-E gradient observation space.
+
+    output:
+        只看 Target item embedding
+        = 舊 F-E v2
+
+    representation:
+        只看與 sequence representation
+        直接相關的 parameters
+
+    combined:
+        representation + target item embedding
+    """
+
+    core_model = (
+        model_joint.module
+        if isinstance(
+            model_joint,
+            nn.DataParallel
+        )
+        else model_joint
+    )
+
+    parameters = []
+    parameter_names = []
+
+    # ========================================================
+    # Helper
+    # ========================================================
+
+    def add_parameter(
+        name,
+        parameter
+    ):
+        if parameter.requires_grad:
+
+            parameters.append(
+                parameter
+            )
+
+            parameter_names.append(
+                name
+            )
+
+    def add_module(
+        prefix,
+        module
+    ):
+        for name, parameter in (
+            module.named_parameters()
+        ):
+
+            add_parameter(
+                prefix
+                + '.'
+                + name,
+                parameter
+            )
+
+    # ========================================================
+    # Output-space
+    # ========================================================
+
+    if probe_space in [
+        'output',
+        'combined'
+    ]:
+
+        add_parameter(
+            'target_embeddings.weight',
+            core_model
+            .target_embeddings
+            .weight
+        )
+
+    # ========================================================
+    # Representation-space
+    # ========================================================
+
+    if probe_space in [
+        'representation',
+        'combined'
+    ]:
+
+        # ----------------------------------------------------
+        # Position information
+        # ----------------------------------------------------
+
+        add_parameter(
+            'position_embeddings.weight',
+            core_model
+            .position_embeddings
+            .weight
+        )
+
+        # ----------------------------------------------------
+        # Input representation normalization
+        # ----------------------------------------------------
+
+        add_module(
+            'LayerNorm',
+            core_model.LayerNorm
+        )
+
+        # ----------------------------------------------------
+        # Core sequence representation:
+        #
+        # Diffu_xstart.att
+        # = Transformer_rep
+        # ----------------------------------------------------
+
+        add_module(
+            'diffu.xstart_model.att',
+            core_model
+            .diffu
+            .xstart_model
+            .att
+        )
+
+        # ----------------------------------------------------
+        # Final diffusion representation norm
+        # ----------------------------------------------------
+
+        add_module(
+            'diffu.xstart_model.norm_diffu_rep',
+            core_model
+            .diffu
+            .xstart_model
+            .norm_diffu_rep
+        )
+
+    if len(parameters) == 0:
+
+        raise ValueError(
+            f'No probe parameters found '
+            f'for probe_space={probe_space}'
+        )
+
+    total_parameter_count = sum(
+        parameter.numel()
+        for parameter
+        in parameters
+    )
+
+    return (
+        parameters,
+        parameter_names,
+        total_parameter_count
+    )
+
+# ============================================================
 # Experiment F-E：Gradient Utilities
 # ============================================================
 
@@ -1136,9 +1296,32 @@ def build_f_meta_gradients(
     # 第一版 gradient probe parameter
     # ========================================================
 
-    probe_parameters = [
-        core_model.target_embeddings.weight
-    ]
+    (
+        probe_parameters,
+        probe_parameter_names,
+        probe_parameter_count
+    ) = get_f_probe_parameters(
+        model_joint=model_joint,
+        probe_space=args.f_probe_space
+    )
+
+    print(
+        'Experiment F-E Probe Parameter Space'
+        '---------------------------------------------'
+    )
+
+    print({
+        'Probe Space':
+            args.f_probe_space,
+
+        'Number of Parameter Tensors':
+            len(
+                probe_parameters
+            ),
+
+        'Total Parameters':
+            probe_parameter_count
+    })
 
     # ========================================================
     # 固定一個 balanced Meta batch
@@ -1333,9 +1516,15 @@ def compute_f_sample_gradient(
         else model_joint
     )
 
-    probe_parameters = [
-        core_model.target_embeddings.weight
-    ]
+    (
+        probe_parameters,
+        _,
+        _
+    ) = get_f_probe_parameters(
+        model_joint=model_joint,
+        probe_space=args.f_probe_space
+    )
+    
 
     seq = torch.LongTensor(
         regulated_df[
@@ -1951,6 +2140,175 @@ def run_experiment_f_e_probe(
         )
     )
 
+    # ============================================================
+    # Experiment F-E：
+    # Paired Strength Comparison
+    # ============================================================
+
+    paired_df = (
+        result_df
+        .pivot_table(
+            index=[
+                'meta_objective',
+                'state',
+                'sample_index',
+                'repeat'
+            ],
+
+            columns='strength',
+
+            values='utility',
+
+            aggfunc='mean'
+        )
+        .reset_index()
+    )
+
+    # 確保三個 strength 都存在
+    required_strengths = [
+        0.1,
+        0.2,
+        0.4
+    ]
+
+    if all(
+        strength in paired_df.columns
+        for strength
+        in required_strengths
+    ):
+
+        paired_df[
+            'delta_02_vs_01'
+        ] = (
+            paired_df[0.2]
+            - paired_df[0.1]
+        )
+
+        paired_df[
+            'delta_04_vs_01'
+        ] = (
+            paired_df[0.4]
+            - paired_df[0.1]
+        )
+
+        paired_df[
+            'delta_02_vs_04'
+        ] = (
+            paired_df[0.2]
+            - paired_df[0.4]
+        )
+
+        paired_summary_df = (
+            paired_df
+            .groupby(
+                [
+                    'meta_objective',
+                    'state'
+                ],
+                as_index=False
+            )
+            .agg(
+                delta_02_vs_01_mean=(
+                    'delta_02_vs_01',
+                    'mean'
+                ),
+
+                delta_02_vs_01_std=(
+                    'delta_02_vs_01',
+                    'std'
+                ),
+
+                delta_02_vs_04_mean=(
+                    'delta_02_vs_04',
+                    'mean'
+                ),
+
+                delta_02_vs_04_std=(
+                    'delta_02_vs_04',
+                    'std'
+                ),
+
+                delta_04_vs_01_mean=(
+                    'delta_04_vs_01',
+                    'mean'
+                )
+            )
+        )
+
+        # --------------------------------------------------------
+        # Win Rate
+        # --------------------------------------------------------
+
+        win_rate_rows = []
+
+        for (
+            objective_name,
+            state
+        ), group in paired_df.groupby(
+            [
+                'meta_objective',
+                'state'
+            ]
+        ):
+
+            win_rate_rows.append({
+
+                'meta_objective':
+                    objective_name,
+
+                'state':
+                    state,
+
+                'p02_beats_p01':
+                    (
+                        group[
+                            'delta_02_vs_01'
+                        ]
+                        > 0
+                    ).mean(),
+
+                'p02_beats_p04':
+                    (
+                        group[
+                            'delta_02_vs_04'
+                        ]
+                        > 0
+                    ).mean(),
+
+                'p04_beats_p01':
+                    (
+                        group[
+                            'delta_04_vs_01'
+                        ]
+                        > 0
+                    ).mean()
+            })
+
+        win_rate_df = pd.DataFrame(
+            win_rate_rows
+        )
+
+        paired_summary_df = (
+            paired_summary_df
+            .merge(
+                win_rate_df,
+                on=[
+                    'meta_objective',
+                    'state'
+                ],
+                how='left'
+            )
+        )
+    print(
+        '\nExperiment F-E Paired Reward Comparison'
+        '---------------------------------------------'
+    )
+
+    print(
+        paired_summary_df.to_string(
+            index=False
+        )
+    )
     # ========================================================
     # Print
     # ========================================================
@@ -2046,6 +2404,23 @@ def run_experiment_f_e_probe(
         + '.csv'
     )
 
+    paired_summary_path = os.path.join(
+        output_dir,
+        'experiment_f_e_paired_summary_'
+        + timestamp
+        + '.csv'
+    )
+
+    paired_summary_df.to_csv(
+        paired_summary_path,
+        index=False
+    )
+
+    print(
+        'Experiment F-E paired summary saved at:',
+        paired_summary_path
+    )
+    
     result_df.to_csv(
         raw_path,
         index=False
