@@ -2,6 +2,7 @@ import torch.nn as nn
 import torch.optim as optim
 import datetime
 import torch
+import torch.nn.functional as F
 import numpy as np
 import copy
 import time
@@ -159,6 +160,764 @@ def calculate_sequence_popular_ratio(
     )
 
     return popular_count / len(valid_items)
+
+# ============================================================
+# Experiment F：Target Inner-Train / Meta split
+# ============================================================
+
+def split_target_train_meta_data(
+    train_data,
+    popular_ratio=0.2,
+    meta_ratio=0.1,
+    random_seed=1997
+):
+    """
+    將 Target training data 分成：
+
+        Inner Train
+        Meta Pool
+
+    Meta Pool 不參與 recommender optimizer update，
+    只用來建立 Meta Objective / g_meta。
+
+    split 會依 Popular-Next / Tail-Next 分層，
+    避免 Meta Pool 的 composition 偏掉。
+    """
+
+    if not 0.0 < meta_ratio < 1.0:
+        raise ValueError(
+            'f_meta_ratio must be between 0 and 1.'
+        )
+
+    (
+        popular_items,
+        unpopular_seen_items,
+        _,
+        _
+    ) = build_item_popularity_groups(
+        train_data,
+        popular_ratio=popular_ratio
+    )
+
+    next_is_popular = train_data['next'].apply(
+        lambda x: int(x) in popular_items
+    )
+
+    popular_next_df = train_data[
+        next_is_popular
+    ]
+
+    tail_next_df = train_data[
+        ~next_is_popular
+    ]
+
+    popular_meta_size = max(
+        1,
+        int(
+            round(
+                len(popular_next_df)
+                * meta_ratio
+            )
+        )
+    )
+
+    tail_meta_size = max(
+        1,
+        int(
+            round(
+                len(tail_next_df)
+                * meta_ratio
+            )
+        )
+    )
+
+    popular_meta_indices = (
+        popular_next_df
+        .sample(
+            n=popular_meta_size,
+            random_state=random_seed
+        )
+        .index
+        .tolist()
+    )
+
+    tail_meta_indices = (
+        tail_next_df
+        .sample(
+            n=tail_meta_size,
+            random_state=random_seed + 1
+        )
+        .index
+        .tolist()
+    )
+
+    meta_indices = (
+        popular_meta_indices
+        + tail_meta_indices
+    )
+
+    meta_data = (
+        train_data
+        .loc[meta_indices]
+        .sample(
+            frac=1.0,
+            random_state=random_seed + 2
+        )
+        .reset_index(drop=True)
+    )
+
+    inner_train_data = (
+        train_data
+        .drop(index=meta_indices)
+        .reset_index(drop=True)
+    )
+
+    return (
+        inner_train_data,
+        meta_data,
+        popular_items,
+        unpopular_seen_items
+    )
+
+# ============================================================
+# Experiment F：Balanced Meta Batch
+# ============================================================
+
+def sample_balanced_meta_batch(
+    meta_data,
+    popular_items,
+    batch_size=64,
+    random_seed=1997
+):
+    """
+    每個 Meta batch 固定 Popular-Next / Tail-Next 各一半。
+    """
+
+    if batch_size < 2:
+        raise ValueError(
+            'f_meta_batch_size must be >= 2.'
+        )
+
+    next_is_popular = meta_data['next'].apply(
+        lambda x: int(x) in popular_items
+    )
+
+    popular_df = meta_data[
+        next_is_popular
+    ]
+
+    tail_df = meta_data[
+        ~next_is_popular
+    ]
+
+    num_popular = batch_size // 2
+
+    num_tail = (
+        batch_size
+        - num_popular
+    )
+
+    popular_indices = (
+        popular_df
+        .sample(
+            n=num_popular,
+            replace=(
+                len(popular_df)
+                < num_popular
+            ),
+            random_state=random_seed
+        )
+        .index
+        .tolist()
+    )
+
+    tail_indices = (
+        tail_df
+        .sample(
+            n=num_tail,
+            replace=(
+                len(tail_df)
+                < num_tail
+            ),
+            random_state=random_seed + 1
+        )
+        .index
+        .tolist()
+    )
+
+    batch_indices = (
+        popular_indices
+        + tail_indices
+    )
+
+    meta_batch = (
+        meta_data
+        .loc[batch_indices]
+        .sample(
+            frac=1.0,
+            random_state=random_seed + 2
+        )
+        .reset_index(drop=True)
+    )
+
+    return meta_batch
+
+# ============================================================
+# Experiment F：M0 / M1 / M2 Meta Objectives
+# ============================================================
+
+def compute_f_meta_objectives(
+    scores,
+    targets,
+    popular_items,
+    margin_beta=0.25,
+    popmass_gamma=0.25
+):
+    """
+    M0:
+        Balanced Popular/Tail CE
+
+    M1:
+        M0 + Tail-vs-Popular Margin
+
+    M2:
+        M0 + Popular Probability Mass
+    """
+
+    targets = targets.view(-1)
+
+    device = scores.device
+
+    # --------------------------------------------------------
+    # Popular-item lookup
+    # --------------------------------------------------------
+
+    popular_ids = torch.tensor(
+        sorted(popular_items),
+        dtype=torch.long,
+        device=device
+    )
+
+    popular_lookup = torch.zeros(
+        scores.size(1),
+        dtype=torch.bool,
+        device=device
+    )
+
+    popular_lookup[
+        popular_ids
+    ] = True
+
+    popular_target_mask = (
+        popular_lookup[
+            targets
+        ]
+    )
+
+    tail_target_mask = (
+        ~popular_target_mask
+    )
+
+    if not popular_target_mask.any():
+        raise ValueError(
+            'Meta batch contains no Popular targets.'
+        )
+
+    if not tail_target_mask.any():
+        raise ValueError(
+            'Meta batch contains no Tail targets.'
+        )
+
+    # ========================================================
+    # Base CE
+    # ========================================================
+
+    per_sample_ce = F.cross_entropy(
+        scores,
+        targets,
+        reduction='none'
+    )
+
+    popular_ce = (
+        per_sample_ce[
+            popular_target_mask
+        ]
+        .mean()
+    )
+
+    tail_ce = (
+        per_sample_ce[
+            tail_target_mask
+        ]
+        .mean()
+    )
+
+    # ========================================================
+    # M0：Balanced Recommendation
+    # ========================================================
+
+    balanced_loss = (
+        0.5 * popular_ce
+        + 0.5 * tail_ce
+    )
+
+    # ========================================================
+    # M1：Tail Margin
+    # ========================================================
+
+    target_scores = (
+        scores
+        .gather(
+            1,
+            targets.unsqueeze(1)
+        )
+        .squeeze(1)
+    )
+
+    popular_candidate_scores = (
+        scores[
+            :,
+            popular_ids
+        ]
+    )
+
+    max_popular_scores = (
+        popular_candidate_scores
+        .max(dim=1)
+        .values
+    )
+
+    tail_margin = (
+        target_scores[
+            tail_target_mask
+        ]
+        -
+        max_popular_scores[
+            tail_target_mask
+        ]
+    )
+
+    margin_loss = (
+        F.softplus(
+            -tail_margin
+        )
+        .mean()
+    )
+
+    m1_loss = (
+        balanced_loss
+        +
+        margin_beta
+        * margin_loss
+    )
+
+    # ========================================================
+    # M2：Popular Probability Mass
+    # ========================================================
+
+    probabilities = F.softmax(
+        scores,
+        dim=1
+    )
+
+    popular_probability_mass = (
+        probabilities[
+            :,
+            popular_ids
+        ]
+        .sum(dim=1)
+    )
+
+    popmass_loss = (
+        popular_probability_mass[
+            tail_target_mask
+        ]
+        .mean()
+    )
+
+    m2_loss = (
+        balanced_loss
+        +
+        popmass_gamma
+        * popmass_loss
+    )
+
+    return {
+        'popular_ce':
+            popular_ce,
+
+        'tail_ce':
+            tail_ce,
+
+        'balanced_loss':
+            balanced_loss,
+
+        'margin_loss':
+            margin_loss,
+
+        'popmass_loss':
+            popmass_loss,
+
+        'M0_balanced':
+            balanced_loss,
+
+        'M1_margin':
+            m1_loss,
+
+        'M2_popmass':
+            m2_loss
+    }
+
+def calculate_gradient_l2_norm(
+    loss,
+    model
+):
+    parameters = [
+        parameter
+        for parameter
+        in model.parameters()
+        if parameter.requires_grad
+    ]
+
+    gradients = torch.autograd.grad(
+        loss,
+        parameters,
+        retain_graph=False,
+        create_graph=False,
+        allow_unused=True
+    )
+
+    total_squared_norm = None
+
+    for gradient in gradients:
+
+        if gradient is None:
+            continue
+
+        squared_norm = (
+            gradient
+            .detach()
+            .pow(2)
+            .sum()
+        )
+
+        if total_squared_norm is None:
+            total_squared_norm = (
+                squared_norm
+            )
+        else:
+            total_squared_norm = (
+                total_squared_norm
+                + squared_norm
+            )
+
+    if total_squared_norm is None:
+        return 0.0
+
+    return (
+        torch.sqrt(
+            total_squared_norm
+        )
+        .item()
+    )
+
+# ============================================================
+# Experiment F：Meta Objective Sanity Check
+# ============================================================
+
+def run_experiment_f_meta_check(
+    model_joint,
+    meta_data,
+    popularity_reference_data,
+    args,
+    logger
+):
+    """
+    使用同一個 Reference Model、
+    同一個 balanced Meta batch，
+
+    分別計算：
+        M0 Balanced
+        M1 Balanced + Margin
+        M2 Balanced + PopMass
+
+    並輸出每個 objective 的 gradient norm。
+
+    注意：
+        這裡不做 optimizer.step()
+        不更新 recommender。
+    """
+
+    device = args.device
+
+    (
+        popular_items,
+        unpopular_seen_items,
+        _,
+        _
+    ) = build_item_popularity_groups(
+        popularity_reference_data,
+        popular_ratio=args.popular_ratio
+    )
+
+    meta_batch = (
+        sample_balanced_meta_batch(
+            meta_data=meta_data,
+            popular_items=popular_items,
+            batch_size=
+                args.f_meta_batch_size,
+            random_seed=
+                args.random_seed
+                + 700000
+        )
+    )
+
+    popular_count = sum(
+        int(item) in popular_items
+        for item
+        in meta_batch['next']
+    )
+
+    tail_count = (
+        len(meta_batch)
+        - popular_count
+    )
+
+    print(
+        'Experiment F Meta Batch'
+        '---------------------------------------------'
+    )
+
+    meta_batch_info = {
+        'Meta Pool Size':
+            len(meta_data),
+
+        'Meta Batch Size':
+            len(meta_batch),
+
+        'Popular Next':
+            popular_count,
+
+        'Tail Next':
+            tail_count,
+
+        'Popular Items':
+            len(popular_items),
+
+        'Tail Items':
+            len(unpopular_seen_items)
+    }
+
+    print(meta_batch_info)
+
+    logger.info(
+        'Experiment F Meta Batch'
+    )
+
+    logger.info(
+        meta_batch_info
+    )
+
+    seq = torch.LongTensor(
+        meta_batch['seq'].tolist()
+    ).to(device)
+
+    target = (
+        torch.LongTensor(
+            meta_batch['next'].tolist()
+        )
+        .unsqueeze(1)
+        .to(device)
+    )
+
+    results = {}
+
+    objective_names = [
+        'M0_balanced',
+        'M1_margin',
+        'M2_popmass'
+    ]
+
+    model_joint = (
+        model_joint
+        .to(device)
+    )
+
+    model_joint.eval()
+
+    core_model = (
+        model_joint.module
+        if isinstance(
+            model_joint,
+            nn.DataParallel
+        )
+        else model_joint
+    )
+
+    # ========================================================
+    # 每個 Objective 重新 forward 一次，
+    # 避免 retain_graph 造成 GPU memory 壓力。
+    #
+    # 每次固定相同 random seed，
+    # 確保 M0/M1/M2 比較公平。
+    # ========================================================
+
+    for objective_name in objective_names:
+
+        random.seed(
+            args.random_seed
+            + 800000
+        )
+
+        np.random.seed(
+            args.random_seed
+            + 800000
+        )
+
+        torch.manual_seed(
+            args.random_seed
+            + 800000
+        )
+
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(
+                args.random_seed
+                + 800000
+            )
+
+        model_joint.zero_grad(
+            set_to_none=True
+        )
+
+        (
+            _,
+            diffu_rep,
+            _,
+            _,
+            _,
+            _,
+            _
+        ) = model_joint(
+            seq,
+            target,
+            None,
+            False,
+            args,
+            0,
+            train_flag=True
+        )
+
+        scores = (
+            core_model
+            .diffu_rep_pre(
+                diffu_rep,
+                False
+            )
+        )
+
+        objective_dict = (
+            compute_f_meta_objectives(
+                scores=scores,
+                targets=target,
+                popular_items=
+                    popular_items,
+                margin_beta=
+                    args.f_margin_beta,
+                popmass_gamma=
+                    args.f_popmass_gamma
+            )
+        )
+
+        selected_loss = (
+            objective_dict[
+                objective_name
+            ]
+        )
+
+        grad_norm = (
+            calculate_gradient_l2_norm(
+                selected_loss,
+                model_joint
+            )
+        )
+
+        result = {
+            'Objective':
+                objective_name,
+
+            'Total Loss':
+                round(
+                    selected_loss.item(),
+                    6
+                ),
+
+            'Balanced Loss':
+                round(
+                    objective_dict[
+                        'balanced_loss'
+                    ].item(),
+                    6
+                ),
+
+            'Popular CE':
+                round(
+                    objective_dict[
+                        'popular_ce'
+                    ].item(),
+                    6
+                ),
+
+            'Tail CE':
+                round(
+                    objective_dict[
+                        'tail_ce'
+                    ].item(),
+                    6
+                ),
+
+            'Margin Loss':
+                round(
+                    objective_dict[
+                        'margin_loss'
+                    ].item(),
+                    6
+                ),
+
+            'PopMass Loss':
+                round(
+                    objective_dict[
+                        'popmass_loss'
+                    ].item(),
+                    6
+                ),
+
+            'Meta Grad Norm':
+                round(
+                    grad_norm,
+                    6
+                )
+        }
+
+        results[
+            objective_name
+        ] = result
+
+        print(
+            'Experiment F Meta Objective'
+            '---------------------------------------------'
+        )
+
+        print(result)
+
+        logger.info(
+            'Experiment F Meta Objective'
+        )
+
+        logger.info(
+            result
+        )
+
+    return results
 
 # ============================================================
 # Experiment E：State Distribution Inspection
@@ -799,7 +1558,7 @@ def hrs_and_ndcgs_k(scores, labels, ks):
         metrics['NDCG@%d' % k] = ndcg_temp
     return metrics  
 
-def model_train(train_data, val_data, test_data, con_data, model_joint, args, logger, pretrain_flag):
+def model_train(train_data, val_data, test_data, con_data, model_joint, args, logger, pretrain_flag, popularity_reference_data=None):
     epochs = args.epochs
     device = args.device
     metric_ks = args.metric_ks
@@ -836,13 +1595,20 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
             popular_ratio=args.popular_ratio
         )
 
+        target_popularity_data = (
+            popularity_reference_data
+            if popularity_reference_data
+            is not None
+            else con_data
+        )
+
         (
             target_popular_items,
             _,
             _,
             _
         ) = build_item_popularity_groups(
-            con_data,
+            target_popularity_data,
             popular_ratio=args.popular_ratio
         )
 
@@ -886,13 +1652,20 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
         and args.tail_context_regulation == 1
     ):
 
+        d2_popularity_data = (
+            popularity_reference_data
+            if popularity_reference_data
+            is not None
+            else train_data
+        )
+
         (
             d2_target_popular_items,
             d2_target_unpopular_items,
             _,
             _
         ) = build_item_popularity_groups(
-            train_data,
+            d2_popularity_data,
             popular_ratio=args.popular_ratio
         )
 
@@ -1287,13 +2060,23 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                 0.2
             )
 
+        evaluation_popularity_data = (
+            popularity_reference_data
+            if (
+                not pretrain_flag
+                and popularity_reference_data
+                is not None
+            )
+            else train_data
+        )
+
         (
             popular_items,
             unpopular_seen_items,
             observed_train_items,
             item_counter
         ) = build_item_popularity_groups(
-            train_data,
+            evaluation_popularity_data,
             popular_ratio=popular_ratio
         )
 

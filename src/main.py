@@ -7,7 +7,7 @@ import numpy as np
 import logging
 import time
 from model import create_model_diffu, Att_Diffuse_model
-from trainer import model_train,analyze_e_sequence_popularity_distribution
+from trainer import model_train,analyze_e_sequence_popularity_distribution, split_target_train_meta_data, run_experiment_f_meta_check
 import pandas as pd
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
@@ -47,6 +47,11 @@ parser.add_argument('--tail_preserve_recent', type=int, default=2, help='Number 
 parser.add_argument('--e_context_state', type=str, default='legacy', choices=['legacy', 'low', 'medium', 'high'], help=('Experiment E target context state: ''low: ratio < 0.5, ''medium: 0.5 <= ratio < 0.75, ''high: ratio >= 0.75'))
 parser.add_argument('--e_context_low_threshold', type=float, default=0.5, help='Boundary between Low and Medium context state')
 parser.add_argument('--e_context_high_threshold', type=float, default=0.75, help='Boundary between Medium and High context state')
+parser.add_argument('--experiment_f', type=int, default=0, choices=[0, 1], help='Enable Experiment F meta-objective validation')
+parser.add_argument('--f_meta_ratio', type=float, default=0.1, help='Ratio of Target training data held out as Meta Pool')
+parser.add_argument('--f_meta_batch_size', type=int, default=64, help='Balanced Popular/Tail meta batch size')
+parser.add_argument('--f_margin_beta', type=float, default=0.25, help='Weight of Tail margin term in M1')
+parser.add_argument('--f_popmass_gamma', type=float, default=0.25, help='Weight of Popular probability mass term in M2')
 parser.add_argument('--optimizer', type=str, default='Adam', choices=['SGD', 'Adam'])
 parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
 parser.add_argument('--loss_lambda', type=float, default=1, help='loss weight for diffusion')
@@ -138,6 +143,93 @@ def main(args):
         )
 
         return
+
+    # ============================================================
+    # Experiment F：Target Inner-Train / Meta Pool
+    # ============================================================
+
+    t_full_train_data = (
+        t_tra_data.copy()
+    )
+
+    if args.experiment_f == 1:
+
+        (
+            t_inner_data,
+            t_meta_data,
+            f_popular_items,
+            f_unpopular_items
+        ) = split_target_train_meta_data(
+            train_data=
+                t_full_train_data,
+
+            popular_ratio=
+                args.popular_ratio,
+
+            meta_ratio=
+                args.f_meta_ratio,
+
+            random_seed=
+                args.random_seed
+        )
+
+        f_split_info = {
+            'Experiment':
+                'F',
+
+            'Original Target Train':
+                len(
+                    t_full_train_data
+                ),
+
+            'Inner Train':
+                len(
+                    t_inner_data
+                ),
+
+            'Meta Pool':
+                len(
+                    t_meta_data
+                ),
+
+            'Meta Ratio':
+                args.f_meta_ratio,
+
+            'Popular Items':
+                len(
+                    f_popular_items
+                ),
+
+            'Tail Items':
+                len(
+                    f_unpopular_items
+                )
+        }
+
+        print(
+            'Experiment F Data Split'
+            '---------------------------------------------'
+        )
+
+        print(
+            f_split_info
+        )
+
+        logger.info(
+            'Experiment F Data Split'
+        )
+
+        logger.info(
+            f_split_info
+        )
+
+    else:
+
+        t_inner_data = (
+            t_tra_data
+        )
+
+        t_meta_data = None
     source_item_num = 98507
     target_item_num = 23978
 
@@ -188,19 +280,123 @@ def main(args):
     rec_diffu_joint_model = Att_Diffuse_model(diffu_rec, args)
     
     pretrain_flag = True
-    best_model, test_results = model_train(s_tra_data, s_val_data, s_test_data, t_tra_data, rec_diffu_joint_model, args, logger, pretrain_flag)
+    best_model, test_results = model_train(
+        s_tra_data,
+        s_val_data,
+        s_test_data,
+
+        # F 模式只讓 Inner Target
+        # 參與 Stage-1 alignment
+        t_inner_data,
+
+        rec_diffu_joint_model,
+        args,
+        logger,
+        pretrain_flag,
+
+        popularity_reference_data=
+            t_full_train_data
+    )
     rec_diffu_joint_model.load_state_dict(torch.load("./saved_model/"+args.s_dataset + "_" + args.t_dataset+"/model.pth"))
     args.item_num = target_item_num
     args.eval_interval = 1
     args.patience = 5
     pretrain_flag = False
-    best_model, test_results = model_train(t_tra_data, t_val_data, t_test_data, None, rec_diffu_joint_model, args, logger, pretrain_flag)
+    # ============================================================
+    # Experiment F Reference Model
+    #
+    # D3 保留
+    # D1 不存在於此 branch
+    # D2 關閉
+    # ============================================================
+
+    original_tail_context_regulation = (
+        args.tail_context_regulation
+    )
+
+    if args.experiment_f == 1:
+
+        args.tail_context_regulation = 0
+
+        print(
+            'Experiment F Reference Model: '
+            'D2 disabled, D3 kept ON.'
+        )
+
+        logger.info(
+            'Experiment F Reference Model: '
+            'D2 disabled, D3 kept ON.'
+        )
+    best_model, test_results = model_train(
+        t_inner_data,
+        t_val_data,
+        t_test_data,
+        None,
+        rec_diffu_joint_model,
+        args,
+        logger,
+        pretrain_flag,
+
+        popularity_reference_data=
+            t_full_train_data
+    )
+    # ============================================================
+    # Experiment F：Meta Objective Sanity Check
+    # ============================================================
+
+    if args.experiment_f == 1:
+
+        f_meta_results = (
+            run_experiment_f_meta_check(
+                model_joint=
+                    best_model,
+
+                meta_data=
+                    t_meta_data,
+
+                popularity_reference_data=
+                    t_full_train_data,
+
+                args=args,
+
+                logger=logger
+            )
+        )
+
+        print(
+            'Experiment F Meta Objective Check Finished'
+            '---------------------------------------------'
+        )
+
+        for (
+            objective_name,
+            result
+        ) in f_meta_results.items():
+
+            print(
+                objective_name,
+                result
+            )
+    if args.experiment_f == 1:
+
+        target_model_filename = (
+            "target_model_f_reference.pth"
+        )
+
+    else:
+
+        target_model_filename = (
+            "target_model.pth"
+        )
+
+
     target_model_path = (
         "./saved_model/"
         + args.s_dataset
         + "_"
         + args.t_dataset
-        + "/target_model.pth"
+        + "/"
+        + target_model_filename
     )
 
     torch.save(best_model.state_dict(), target_model_path)
