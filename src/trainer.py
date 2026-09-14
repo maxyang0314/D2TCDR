@@ -3694,6 +3694,720 @@ def run_experiment_f_e_virtual_probe(
     )
 
 # ============================================================
+# Experiment F-E V5：
+# One training-aligned virtual batch update
+# ============================================================
+
+def compute_f_v5_batch_update(
+    model_joint,
+    batch_df,
+    meta_batch,
+    popular_items,
+    args,
+    model_random_seed,
+    meta_random_seed
+):
+    """
+    從同一個 Reference Model 複製一份 temporary model。
+
+    對 batch 做一次真正的 Target Stage-2 style update：
+
+        forward
+        -> loss_diffu_ce
+        -> Adam
+        -> optimizer.step()
+
+    然後評估 update 後的 M0/M1/M2 Meta Loss。
+
+    Reference Model 本身完全不修改。
+    """
+
+    device = args.device
+
+    # --------------------------------------------------------
+    # 每個 Action 都從相同 Reference Model 開始
+    # --------------------------------------------------------
+
+    virtual_model = (
+        copy.deepcopy(
+            model_joint
+        )
+        .to(device)
+    )
+
+    core_model = (
+        virtual_model.module
+        if isinstance(
+            virtual_model,
+            nn.DataParallel
+        )
+        else virtual_model
+    )
+
+    # --------------------------------------------------------
+    # 與正式 training 相同：Adam + all parameters
+    # --------------------------------------------------------
+
+    virtual_optimizer = optim.Adam(
+        virtual_model.parameters(),
+        lr=args.f_v5_lr,
+        weight_decay=args.weight_decay
+    )
+
+    seq = torch.LongTensor(
+        batch_df['seq'].tolist()
+    ).to(device)
+
+    target = (
+        torch.LongTensor(
+            batch_df['next'].tolist()
+        )
+        .unsqueeze(1)
+        .to(device)
+    )
+
+    set_f_probe_seed(
+        model_random_seed
+    )
+
+    virtual_model.train()
+
+    virtual_optimizer.zero_grad()
+
+    (
+        _,
+        diffu_rep,
+        _,
+        _,
+        _,
+        _,
+        em_loss
+    ) = virtual_model(
+        seq,
+        target,
+        None,
+
+        False,  # Target Stage-2
+        args,
+        0,
+
+        train_flag=True
+    )
+
+    # ========================================================
+    # 完全照 model_train() Stage-2 loss 寫法
+    # ========================================================
+
+    loss_diffu_value = (
+        core_model.loss_diffu_ce(
+            diffu_rep,
+            target,
+            False
+        )
+    )
+
+    loss_all = (
+        loss_diffu_value
+        + em_loss
+        * args.loss_lambda
+    )
+
+    loss_all.backward()
+
+    # --------------------------------------------------------
+    # gradient norm：只當 diagnostic
+    # --------------------------------------------------------
+
+    grad_squared_norm = 0.0
+
+    for parameter in (
+        virtual_model.parameters()
+    ):
+
+        if parameter.grad is not None:
+
+            grad_squared_norm += (
+                parameter.grad
+                .detach()
+                .pow(2)
+                .sum()
+                .item()
+            )
+
+    grad_norm = (
+        grad_squared_norm
+        ** 0.5
+    )
+
+    virtual_optimizer.step()
+
+    # ========================================================
+    # Update 後 Meta Loss
+    # ========================================================
+
+    updated_meta_losses = (
+        evaluate_f_meta_losses(
+            model_joint=
+                virtual_model,
+
+            meta_batch=
+                meta_batch,
+
+            popular_items=
+                popular_items,
+
+            args=args,
+
+            random_seed=
+                meta_random_seed
+        )
+    )
+
+    training_loss = (
+        loss_all
+        .detach()
+        .item()
+    )
+
+    del virtual_optimizer
+    del virtual_model
+
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+    return {
+        'training_loss':
+            training_loss,
+
+        'grad_norm':
+            grad_norm,
+
+        'meta_losses':
+            updated_meta_losses
+    }
+
+# ============================================================
+# Experiment F-E V5：
+# Training-aligned Mixed-Batch Virtual Reward
+# ============================================================
+
+def run_experiment_f_e_v5_batch_probe(
+    model_joint,
+    inner_train_data,
+    meta_data,
+    popularity_reference_data,
+    args,
+    logger
+):
+    """
+    V5:
+
+    同一個 mixed Target batch：
+
+        No-Reg
+        vs
+        Low/Medium/High × p=.1/.2/.4
+
+    每個 Action：
+        full-model Adam update
+
+    Reward：
+        Regulated Meta improvement
+        -
+        No-Reg Meta improvement
+    """
+
+    (
+        popular_items,
+        unpopular_seen_items,
+        _,
+        _
+    ) = build_item_popularity_groups(
+        popularity_reference_data,
+        popular_ratio=
+            args.popular_ratio
+    )
+
+    # ========================================================
+    # Fixed Meta Batch
+    # ========================================================
+
+    meta_batch = (
+        sample_balanced_meta_batch(
+            meta_data=
+                meta_data,
+
+            popular_items=
+                popular_items,
+
+            batch_size=
+                args.f_meta_batch_size,
+
+            random_seed=
+                args.random_seed
+                + 700000
+        )
+    )
+
+    meta_random_seed = (
+        args.random_seed
+        + 800000
+    )
+
+    baseline_meta_losses = (
+        evaluate_f_meta_losses(
+            model_joint=
+                model_joint,
+
+            meta_batch=
+                meta_batch,
+
+            popular_items=
+                popular_items,
+
+            args=args,
+
+            random_seed=
+                meta_random_seed
+        )
+    )
+
+    print(
+        'Experiment F-E V5 Baseline Meta Loss'
+        '---------------------------------------------'
+    )
+
+    print(
+        baseline_meta_losses
+    )
+
+    states = [
+        'low',
+        'medium',
+        'high'
+    ]
+
+    strengths = [
+        0.1,
+        0.2,
+        0.4
+    ]
+
+    records = []
+
+    # ========================================================
+    # 每個 repeat 使用一個相同 mixed batch
+    # ========================================================
+
+    for repeat_index in range(
+        args.f_v5_repeats
+    ):
+
+        batch_seed = (
+            args.random_seed
+            + 2000000
+            + repeat_index
+        )
+
+        base_batch = (
+            inner_train_data
+            .sample(
+                n=args.f_v5_batch_size,
+                replace=False,
+                random_state=batch_seed
+            )
+            .copy()
+            .reset_index(drop=True)
+        )
+
+        # ----------------------------------------------------
+        # 所有 Action 共用完全相同 model stochastic seed
+        # ----------------------------------------------------
+
+        model_seed = (
+            args.random_seed
+            + 2100000
+            + repeat_index
+        )
+
+        # ====================================================
+        # 1. No-Reg baseline update
+        # ====================================================
+
+        no_reg_result = (
+            compute_f_v5_batch_update(
+                model_joint=
+                    model_joint,
+
+                batch_df=
+                    base_batch,
+
+                meta_batch=
+                    meta_batch,
+
+                popular_items=
+                    popular_items,
+
+                args=args,
+
+                model_random_seed=
+                    model_seed,
+
+                meta_random_seed=
+                    meta_random_seed
+            )
+        )
+
+        no_reg_rewards = {}
+
+        for objective_name in [
+            'M0_balanced',
+            'M1_margin',
+            'M2_popmass'
+        ]:
+
+            no_reg_rewards[
+                objective_name
+            ] = (
+                baseline_meta_losses[
+                    objective_name
+                ]
+                -
+                no_reg_result[
+                    'meta_losses'
+                ][
+                    objective_name
+                ]
+            )
+
+        # ====================================================
+        # 2. State × Strength
+        # ====================================================
+
+        for (
+            state_index,
+            state
+        ) in enumerate(states):
+
+            regulation_seed = (
+                args.random_seed
+                + 2200000
+                + repeat_index * 100
+                + state_index
+            )
+
+            for strength in strengths:
+
+                (
+                    regulated_batch,
+                    d2_stats
+                ) = (
+                    rule_based_tail_context_regulation(
+                        batch_df=
+                            base_batch,
+
+                        popular_items=
+                            popular_items,
+
+                        unpopular_seen_items=
+                            unpopular_seen_items,
+
+                        context_state=
+                            state,
+
+                        low_threshold=
+                            args.e_context_low_threshold,
+
+                        high_threshold=
+                            args.e_context_high_threshold,
+
+                        max_len=
+                            args.max_len,
+
+                        # 完全回到 Experiment E training setting
+                        augmentation_probability=
+                            args.f_v5_aug_probability,
+
+                        drop_probability=
+                            strength,
+
+                        preserve_recent=
+                            args.tail_preserve_recent,
+
+                        # 同 state 不同 strength
+                        # 使用同一 random stream
+                        random_seed=
+                            regulation_seed
+                    )
+                )
+
+                action_result = (
+                    compute_f_v5_batch_update(
+                        model_joint=
+                            model_joint,
+
+                        batch_df=
+                            regulated_batch,
+
+                        meta_batch=
+                            meta_batch,
+
+                        popular_items=
+                            popular_items,
+
+                        args=args,
+
+                        # 跟 No-Reg 完全相同
+                        model_random_seed=
+                            model_seed,
+
+                        meta_random_seed=
+                            meta_random_seed
+                    )
+                )
+
+                for objective_name in [
+                    'M0_balanced',
+                    'M1_margin',
+                    'M2_popmass'
+                ]:
+
+                    raw_reward = (
+                        baseline_meta_losses[
+                            objective_name
+                        ]
+                        -
+                        action_result[
+                            'meta_losses'
+                        ][
+                            objective_name
+                        ]
+                    )
+
+                    incremental_reward = (
+                        raw_reward
+                        -
+                        no_reg_rewards[
+                            objective_name
+                        ]
+                    )
+
+                    records.append({
+                        'repeat':
+                            repeat_index,
+
+                        'meta_objective':
+                            objective_name,
+
+                        'state':
+                            state,
+
+                        'strength':
+                            strength,
+
+                        'raw_reward':
+                            raw_reward,
+
+                        'no_reg_reward':
+                            no_reg_rewards[
+                                objective_name
+                            ],
+
+                        'incremental_reward':
+                            incremental_reward,
+
+                        'training_loss':
+                            action_result[
+                                'training_loss'
+                            ],
+
+                        'grad_norm':
+                            action_result[
+                                'grad_norm'
+                            ],
+
+                        'eligible_samples':
+                            d2_stats[
+                                'eligible_state_unpopnext'
+                            ],
+
+                        'augmented_samples':
+                            d2_stats[
+                                'augmented_samples'
+                            ],
+
+                        'dropped_items':
+                            d2_stats[
+                                'dropped_items'
+                            ],
+
+                        'augmentation_ratio':
+                            d2_stats[
+                                'augmentation_ratio_among_eligible'
+                            ]
+                    })
+                result_df = pd.DataFrame(
+                    records
+                )
+
+                summary_df = (
+                    result_df
+                    .groupby(
+                        [
+                            'meta_objective',
+                            'state',
+                            'strength'
+                        ],
+                        as_index=False
+                    )
+                    .agg(
+                        incremental_reward_mean=(
+                            'incremental_reward',
+                            'mean'
+                        ),
+
+                        incremental_reward_std=(
+                            'incremental_reward',
+                            'std'
+                        ),
+
+                        raw_reward_mean=(
+                            'raw_reward',
+                            'mean'
+                        ),
+
+                        no_reg_reward_mean=(
+                            'no_reg_reward',
+                            'mean'
+                        ),
+
+                        eligible_samples_mean=(
+                            'eligible_samples',
+                            'mean'
+                        ),
+
+                        augmented_samples_mean=(
+                            'augmented_samples',
+                            'mean'
+                        ),
+
+                        dropped_items_mean=(
+                            'dropped_items',
+                            'mean'
+                        )
+                    )
+                )
+
+                print(
+                    '\nExperiment F-E V5 Summary'
+                    '---------------------------------------------'
+                )
+
+                for objective_name in [
+                    'M0_balanced',
+                    'M1_margin',
+                    'M2_popmass'
+                ]:
+
+                    print(
+                        '\nMeta Objective:',
+                        objective_name
+                    )
+
+                    print(
+                        summary_df[
+                            summary_df[
+                                'meta_objective'
+                            ]
+                            ==
+                            objective_name
+                        ].to_string(
+                            index=False
+                        )
+                    )
+                    paired_df = (
+                        result_df
+                        .pivot_table(
+                            index=[
+                                'meta_objective',
+                                'state',
+                                'repeat'
+                            ],
+
+                            columns='strength',
+
+                            values='incremental_reward',
+
+                            aggfunc='mean'
+                        )
+                        .reset_index()
+                    )
+
+                    paired_df[
+                        'delta_02_vs_01'
+                    ] = (
+                        paired_df[0.2]
+                        - paired_df[0.1]
+                    )
+
+                    paired_df[
+                        'delta_02_vs_04'
+                    ] = (
+                        paired_df[0.2]
+                        - paired_df[0.4]
+                    )
+
+                    paired_df[
+                        'delta_04_vs_01'
+                    ] = (
+                        paired_df[0.4]
+                        - paired_df[0.1]
+                    )
+
+                    paired_summary = (
+                        paired_df
+                        .groupby(
+                            [
+                                'meta_objective',
+                                'state'
+                            ],
+                            as_index=False
+                        )
+                        .agg(
+                            delta_02_vs_01_mean=(
+                                'delta_02_vs_01',
+                                'mean'
+                            ),
+
+                            delta_02_vs_04_mean=(
+                                'delta_02_vs_04',
+                                'mean'
+                            ),
+
+                            delta_04_vs_01_mean=(
+                                'delta_04_vs_01',
+                                'mean'
+                            )
+                        )
+                    )
+
+                    print(
+                        '\nExperiment F-E V5 Paired Comparison'
+                        '---------------------------------------------'
+                    )
+
+                    print(
+                        paired_summary.to_string(
+                            index=False
+                        )
+                    )
+
+                    return (
+                        summary_df,
+                        paired_summary
+                    )
+            
+# ============================================================
 # Experiment E：State Distribution Inspection
 # ============================================================
 

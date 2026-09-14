@@ -7,7 +7,7 @@ import numpy as np
 import logging
 import time
 from model import create_model_diffu, Att_Diffuse_model
-from trainer import model_train,analyze_e_sequence_popularity_distribution, split_target_train_meta_data, run_experiment_f_meta_check, run_experiment_f_e_probe, run_experiment_f_e_virtual_probe
+from trainer import model_train,analyze_e_sequence_popularity_distribution, split_target_train_meta_data, run_experiment_f_meta_check, run_experiment_f_e_probe, run_experiment_f_e_virtual_probe, run_experiment_f_e_v5_batch_probe
 import pandas as pd
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
@@ -56,8 +56,12 @@ parser.add_argument('--f_run_probe', type=int, default=0, choices=[0, 1], help='
 parser.add_argument('--f_probe_samples', type=int, default=32, help='Number of probe samples for each Low/Medium/High state')
 parser.add_argument('--f_probe_repeats', type=int, default=3, help='Repeated D2 masking trials for each sample and strength')
 parser.add_argument( '--f_probe_space', type=str, default='representation', choices=['output', 'representation', 'combined'],help=( 'Gradient parameter space for Experiment F-E: ' 'output=target embedding only, ' 'representation=sequence representation layers, ' 'combined=both'))
-parser.add_argument('--f_reward_mode', type=str, default='virtual', choices=['gradient', 'virtual'], help=('Reward mode for Experiment F-E: ' 'gradient=old gradient alignment, ' 'virtual=virtual one-step meta improvement'))
+parser.add_argument('--f_reward_mode', type=str, default='virtual', choices=['gradient','virtual','batch_virtual'], help=('gradient = V3 gradient alignment, ''virtual = V4 single-sample virtual update, ''batch_virtual = V5 training-aligned batch update'))
 parser.add_argument('--f_virtual_lr', type=float, default=0.001, help='Virtual one-step learning rate for Experiment F-E v4')
+parser.add_argument('--f_v5_batch_size', type=int, default=512, help='Virtual training batch size for V5')
+parser.add_argument('--f_v5_repeats', type=int, default=5, help='Number of paired mixed-batch repetitions')
+parser.add_argument('--f_v5_lr', type=float, default=0.001, help='Adam learning rate for V5 virtual batch update')
+parser.add_argument('--f_v5_aug_probability', type=float, default=0.5, help='D2 participation probability; 0.5 matches Experiment E')
 parser.add_argument('--optimizer', type=str, default='Adam', choices=['SGD', 'Adam'])
 parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
 parser.add_argument('--loss_lambda', type=float, default=1, help='loss weight for diffusion')
@@ -378,7 +382,32 @@ def main(args):
         and args.f_run_probe == 1
     ):
 
-        if args.f_reward_mode == 'virtual':
+        if args.f_reward_mode == 'batch_virtual':
+
+            (
+                f_e_summary,
+                f_e_paired_summary
+            ) = (
+                run_experiment_f_e_v5_batch_probe(
+                    model_joint=
+                        best_model,
+
+                    inner_train_data=
+                        t_inner_data,
+
+                    meta_data=
+                        t_meta_data,
+
+                    popularity_reference_data=
+                        t_full_train_data,
+
+                    args=args,
+
+                    logger=logger
+                )
+            )
+
+        elif args.f_reward_mode == 'virtual':
 
             (
                 f_e_summary,
@@ -403,27 +432,27 @@ def main(args):
                 )
             )
 
-    else:
+        else:
 
-        f_e_summary = (
-            run_experiment_f_e_probe(
-                model_joint=
-                    best_model,
+            f_e_summary = (
+                run_experiment_f_e_probe(
+                    model_joint=
+                        best_model,
 
-                inner_train_data=
-                    t_inner_data,
+                    inner_train_data=
+                        t_inner_data,
 
-                meta_data=
-                    t_meta_data,
+                    meta_data=
+                        t_meta_data,
 
-                popularity_reference_data=
-                    t_full_train_data,
+                    popularity_reference_data=
+                        t_full_train_data,
 
-                args=args,
+                    args=args,
 
-                logger=logger
+                    logger=logger
+                )
             )
-        )
         print(
             'Experiment F Meta Objective Check Finished'
             '---------------------------------------------'
