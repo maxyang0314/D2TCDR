@@ -53,12 +53,16 @@ class Att_Diffuse_model(nn.Module):
         return self.loss_ce(scores, labels.squeeze(-1))
 
 
-    def loss_diffu_ce(self, rep_diffu, labels, pretrain_flag):
+    def loss_diffu_ce(self, rep_diffu, labels, pretrain_flag, sample_weights=None):
         if pretrain_flag:
             scores = torch.matmul(rep_diffu, self.shared_layer(self.souce_embeddings.weight).t())
         else:
             scores = torch.matmul(rep_diffu, self.target_embeddings.weight.t())
-        return self.loss_ce(scores, labels.squeeze(-1))
+        labels_flat = labels.squeeze(-1)
+        if sample_weights is None:
+            return self.loss_ce(scores, labels_flat)
+        per_sample_loss = self.loss_ce_rec(scores, labels_flat)
+        return (per_sample_loss * sample_weights.view(-1).to(per_sample_loss.device)).mean()
 
     def diffu_rep_pre(self, rep_diffu, pretrain_flag):
         if pretrain_flag:

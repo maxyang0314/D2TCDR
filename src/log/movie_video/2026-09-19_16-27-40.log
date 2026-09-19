@@ -1,0 +1,354 @@
+2026/09/19 16:27:40 - __main__ - INFO - 102 - main - Namespace(agent_baseline_momentum=0.9, agent_enabled=1, agent_entropy_beta=0.01, agent_hidden_dim=32, agent_log_interval=20, agent_lr=0.001, agent_reward_clip=5.0, agent_tail_margin_lambda=0.25, agent_warmup_epochs=1, batch_size=512, decay_step=100, description='Diffu_norm_score', device='cuda', diffusion_steps=32, dropout=0.1, e_context_high_threshold=0.75, e_context_low_threshold=0.5, emb_dropout=0.3, epochs=100, eval_interval=5, gamma=0.1, group_alignment=1, group_alignment_mode='both', group_context_threshold=0.5, group_pop_weight=1.0, group_tail_weight=1.0, hidden_act='gelu', hidden_size=128, lambda_uncertainty=0.001, log_file='log/', loss_lambda=1, lr=0.001, max_len=8, metric_ks=[5, 10, 20], momentum=None, noise_schedule='trunc_lin', num_blocks=4, num_gpu=1, optimizer='Adam', p=0.3, patience=2, popular_ratio=0.2, random_seed=1997, rescale_timesteps=True, s_dataset='movie', schedule_sampler_name='lossaware', t_dataset='video', tail_preserve_recent=2, w=1.0, weight_decay=0)
+2026/09/19 16:27:43 - __main__ - INFO - 404 - trainer - Group-aware Alignment Definition------------------------------------
+2026/09/19 16:27:43 - __main__ - INFO - 408 - trainer - {'group_alignment': True, 'alignment_mode': 'both', 'context_threshold': 0.5, 'popular_weight': 1.0, 'tail_weight': 1.0, 'source_popular_items': 17856, 'target_popular_items': 4372}
+2026/09/19 16:27:43 - __main__ - INFO - 560 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/19 16:27:43 - __main__ - INFO - 565 - trainer - {'Epoch': 0, 'Source Popular-context': 407, 'Source Tail-context': 75, 'Target Popular-context': 379, 'Target Tail-context': 87}
+2026/09/19 16:27:48 - __main__ - INFO - 672 - trainer - Epoch: 0
+2026/09/19 16:27:48 - __main__ - INFO - 560 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/19 16:27:48 - __main__ - INFO - 565 - trainer - {'Epoch': 1, 'Source Popular-context': 394, 'Source Tail-context': 77, 'Target Popular-context': 372, 'Target Tail-context': 83}
+2026/09/19 16:27:53 - __main__ - INFO - 672 - trainer - Epoch: 1
+2026/09/19 16:27:53 - __main__ - INFO - 560 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/19 16:27:53 - __main__ - INFO - 565 - trainer - {'Epoch': 2, 'Source Popular-context': 393, 'Source Tail-context': 73, 'Target Popular-context': 387, 'Target Tail-context': 77}
+2026/09/19 16:27:57 - __main__ - INFO - 672 - trainer - Epoch: 2
+2026/09/19 16:27:57 - __main__ - INFO - 560 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/19 16:27:57 - __main__ - INFO - 565 - trainer - {'Epoch': 3, 'Source Popular-context': 409, 'Source Tail-context': 56, 'Target Popular-context': 342, 'Target Tail-context': 98}
+2026/09/19 16:28:02 - __main__ - INFO - 672 - trainer - Epoch: 3
+2026/09/19 16:28:02 - __main__ - INFO - 560 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/19 16:28:02 - __main__ - INFO - 565 - trainer - {'Epoch': 4, 'Source Popular-context': 418, 'Source Tail-context': 59, 'Target Popular-context': 370, 'Target Tail-context': 79}
+2026/09/19 16:28:06 - __main__ - INFO - 672 - trainer - Epoch: 4
+2026/09/19 16:28:06 - __main__ - INFO - 560 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/19 16:28:06 - __main__ - INFO - 565 - trainer - {'Epoch': 5, 'Source Popular-context': 403, 'Source Tail-context': 59, 'Target Popular-context': 368, 'Target Tail-context': 85}
+2026/09/19 16:28:11 - __main__ - INFO - 672 - trainer - Epoch: 5
+2026/09/19 16:28:11 - __main__ - INFO - 690 - trainer - start predicting: 2026-09-19 16:28:11.157719
+2026/09/19 16:28:22 - __main__ - INFO - 727 - trainer - {'Best_HR@5': 38.7793, 'Best_NDCG@5': 29.9369, 'Best_HR@10': 49.4824, 'Best_NDCG@10': 33.3818, 'Best_HR@20': 62.0313, 'Best_NDCG@20': 36.529}
+2026/09/19 16:28:22 - __main__ - INFO - 728 - trainer - {'Best_epoch_HR@5': 5, 'Best_epoch_NDCG@5': 5, 'Best_epoch_HR@10': 5, 'Best_epoch_NDCG@10': 5, 'Best_epoch_HR@20': 5, 'Best_epoch_NDCG@20': 5}
+2026/09/19 16:28:22 - __main__ - INFO - 560 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/19 16:28:22 - __main__ - INFO - 565 - trainer - {'Epoch': 6, 'Source Popular-context': 423, 'Source Tail-context': 54, 'Target Popular-context': 362, 'Target Tail-context': 95}
+2026/09/19 16:28:27 - __main__ - INFO - 672 - trainer - Epoch: 6
+2026/09/19 16:28:27 - __main__ - INFO - 560 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/19 16:28:27 - __main__ - INFO - 565 - trainer - {'Epoch': 7, 'Source Popular-context': 421, 'Source Tail-context': 63, 'Target Popular-context': 375, 'Target Tail-context': 85}
+2026/09/19 16:28:31 - __main__ - INFO - 672 - trainer - Epoch: 7
+2026/09/19 16:28:31 - __main__ - INFO - 560 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/19 16:28:31 - __main__ - INFO - 565 - trainer - {'Epoch': 8, 'Source Popular-context': 421, 'Source Tail-context': 59, 'Target Popular-context': 368, 'Target Tail-context': 94}
+2026/09/19 16:28:36 - __main__ - INFO - 672 - trainer - Epoch: 8
+2026/09/19 16:28:36 - __main__ - INFO - 560 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/19 16:28:36 - __main__ - INFO - 565 - trainer - {'Epoch': 9, 'Source Popular-context': 402, 'Source Tail-context': 78, 'Target Popular-context': 378, 'Target Tail-context': 85}
+2026/09/19 16:28:41 - __main__ - INFO - 672 - trainer - Epoch: 9
+2026/09/19 16:28:41 - __main__ - INFO - 560 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/19 16:28:41 - __main__ - INFO - 565 - trainer - {'Epoch': 10, 'Source Popular-context': 428, 'Source Tail-context': 46, 'Target Popular-context': 374, 'Target Tail-context': 78}
+2026/09/19 16:28:45 - __main__ - INFO - 672 - trainer - Epoch: 10
+2026/09/19 16:28:45 - __main__ - INFO - 690 - trainer - start predicting: 2026-09-19 16:28:45.646337
+2026/09/19 16:28:57 - __main__ - INFO - 727 - trainer - {'Best_HR@5': 48.418, 'Best_NDCG@5': 36.9735, 'Best_HR@10': 58.9648, 'Best_NDCG@10': 40.3781, 'Best_HR@20': 69.5898, 'Best_NDCG@20': 43.0669}
+2026/09/19 16:28:57 - __main__ - INFO - 728 - trainer - {'Best_epoch_HR@5': 10, 'Best_epoch_NDCG@5': 10, 'Best_epoch_HR@10': 10, 'Best_epoch_NDCG@10': 10, 'Best_epoch_HR@20': 10, 'Best_epoch_NDCG@20': 10}
+2026/09/19 16:28:57 - __main__ - INFO - 560 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/19 16:28:57 - __main__ - INFO - 565 - trainer - {'Epoch': 11, 'Source Popular-context': 413, 'Source Tail-context': 60, 'Target Popular-context': 381, 'Target Tail-context': 85}
+2026/09/19 16:29:01 - __main__ - INFO - 672 - trainer - Epoch: 11
+2026/09/19 16:29:01 - __main__ - INFO - 560 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/19 16:29:01 - __main__ - INFO - 565 - trainer - {'Epoch': 12, 'Source Popular-context': 424, 'Source Tail-context': 60, 'Target Popular-context': 372, 'Target Tail-context': 80}
+2026/09/19 16:29:06 - __main__ - INFO - 672 - trainer - Epoch: 12
+2026/09/19 16:29:06 - __main__ - INFO - 560 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/19 16:29:06 - __main__ - INFO - 565 - trainer - {'Epoch': 13, 'Source Popular-context': 411, 'Source Tail-context': 73, 'Target Popular-context': 382, 'Target Tail-context': 79}
+2026/09/19 16:29:10 - __main__ - INFO - 672 - trainer - Epoch: 13
+2026/09/19 16:29:10 - __main__ - INFO - 560 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/19 16:29:10 - __main__ - INFO - 565 - trainer - {'Epoch': 14, 'Source Popular-context': 423, 'Source Tail-context': 65, 'Target Popular-context': 379, 'Target Tail-context': 94}
+2026/09/19 16:29:15 - __main__ - INFO - 672 - trainer - Epoch: 14
+2026/09/19 16:29:15 - __main__ - INFO - 560 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/19 16:29:15 - __main__ - INFO - 565 - trainer - {'Epoch': 15, 'Source Popular-context': 422, 'Source Tail-context': 58, 'Target Popular-context': 373, 'Target Tail-context': 98}
+2026/09/19 16:29:19 - __main__ - INFO - 672 - trainer - Epoch: 15
+2026/09/19 16:29:19 - __main__ - INFO - 690 - trainer - start predicting: 2026-09-19 16:29:19.924246
+2026/09/19 16:29:32 - __main__ - INFO - 727 - trainer - {'Best_HR@5': 49.4531, 'Best_NDCG@5': 37.5251, 'Best_HR@10': 60.625, 'Best_NDCG@10': 41.1341, 'Best_HR@20': 70.5859, 'Best_NDCG@20': 43.6558}
+2026/09/19 16:29:32 - __main__ - INFO - 728 - trainer - {'Best_epoch_HR@5': 15, 'Best_epoch_NDCG@5': 15, 'Best_epoch_HR@10': 15, 'Best_epoch_NDCG@10': 15, 'Best_epoch_HR@20': 15, 'Best_epoch_NDCG@20': 15}
+2026/09/19 16:29:32 - __main__ - INFO - 560 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/19 16:29:32 - __main__ - INFO - 565 - trainer - {'Epoch': 16, 'Source Popular-context': 403, 'Source Tail-context': 65, 'Target Popular-context': 374, 'Target Tail-context': 89}
+2026/09/19 16:29:36 - __main__ - INFO - 672 - trainer - Epoch: 16
+2026/09/19 16:29:36 - __main__ - INFO - 560 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/19 16:29:36 - __main__ - INFO - 565 - trainer - {'Epoch': 17, 'Source Popular-context': 423, 'Source Tail-context': 52, 'Target Popular-context': 355, 'Target Tail-context': 109}
+2026/09/19 16:29:41 - __main__ - INFO - 672 - trainer - Epoch: 17
+2026/09/19 16:29:41 - __main__ - INFO - 560 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/19 16:29:41 - __main__ - INFO - 565 - trainer - {'Epoch': 18, 'Source Popular-context': 413, 'Source Tail-context': 63, 'Target Popular-context': 386, 'Target Tail-context': 85}
+2026/09/19 16:29:46 - __main__ - INFO - 672 - trainer - Epoch: 18
+2026/09/19 16:29:46 - __main__ - INFO - 560 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/19 16:29:46 - __main__ - INFO - 565 - trainer - {'Epoch': 19, 'Source Popular-context': 402, 'Source Tail-context': 63, 'Target Popular-context': 367, 'Target Tail-context': 94}
+2026/09/19 16:29:50 - __main__ - INFO - 672 - trainer - Epoch: 19
+2026/09/19 16:29:50 - __main__ - INFO - 560 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/19 16:29:50 - __main__ - INFO - 565 - trainer - {'Epoch': 20, 'Source Popular-context': 409, 'Source Tail-context': 62, 'Target Popular-context': 373, 'Target Tail-context': 82}
+2026/09/19 16:29:55 - __main__ - INFO - 672 - trainer - Epoch: 20
+2026/09/19 16:29:55 - __main__ - INFO - 690 - trainer - start predicting: 2026-09-19 16:29:55.517847
+2026/09/19 16:30:07 - __main__ - INFO - 560 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/19 16:30:07 - __main__ - INFO - 565 - trainer - {'Epoch': 21, 'Source Popular-context': 404, 'Source Tail-context': 63, 'Target Popular-context': 372, 'Target Tail-context': 83}
+2026/09/19 16:30:12 - __main__ - INFO - 672 - trainer - Epoch: 21
+2026/09/19 16:30:12 - __main__ - INFO - 560 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/19 16:30:12 - __main__ - INFO - 565 - trainer - {'Epoch': 22, 'Source Popular-context': 416, 'Source Tail-context': 59, 'Target Popular-context': 370, 'Target Tail-context': 78}
+2026/09/19 16:30:16 - __main__ - INFO - 672 - trainer - Epoch: 22
+2026/09/19 16:30:16 - __main__ - INFO - 560 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/19 16:30:16 - __main__ - INFO - 565 - trainer - {'Epoch': 23, 'Source Popular-context': 404, 'Source Tail-context': 69, 'Target Popular-context': 385, 'Target Tail-context': 81}
+2026/09/19 16:30:21 - __main__ - INFO - 672 - trainer - Epoch: 23
+2026/09/19 16:30:21 - __main__ - INFO - 560 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/19 16:30:21 - __main__ - INFO - 565 - trainer - {'Epoch': 24, 'Source Popular-context': 400, 'Source Tail-context': 74, 'Target Popular-context': 373, 'Target Tail-context': 90}
+2026/09/19 16:30:25 - __main__ - INFO - 672 - trainer - Epoch: 24
+2026/09/19 16:30:25 - __main__ - INFO - 560 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/19 16:30:25 - __main__ - INFO - 565 - trainer - {'Epoch': 25, 'Source Popular-context': 415, 'Source Tail-context': 50, 'Target Popular-context': 382, 'Target Tail-context': 81}
+2026/09/19 16:30:30 - __main__ - INFO - 672 - trainer - Epoch: 25
+2026/09/19 16:30:30 - __main__ - INFO - 690 - trainer - start predicting: 2026-09-19 16:30:30.383516
+2026/09/19 16:30:42 - __main__ - INFO - 737 - trainer - {'Best_HR@5': 49.4531, 'Best_NDCG@5': 37.5251, 'Best_HR@10': 60.625, 'Best_NDCG@10': 41.1341, 'Best_HR@20': 70.5859, 'Best_NDCG@20': 43.6558}
+2026/09/19 16:30:42 - __main__ - INFO - 738 - trainer - {'Best_epoch_HR@5': 15, 'Best_epoch_NDCG@5': 15, 'Best_epoch_HR@10': 15, 'Best_epoch_NDCG@10': 15, 'Best_epoch_HR@20': 15, 'Best_epoch_NDCG@20': 15}
+2026/09/19 16:30:42 - __main__ - INFO - 844 - trainer - Source Popularity Definition---------------------------------------------
+2026/09/19 16:30:42 - __main__ - INFO - 849 - trainer - {'domain': 'Source', 'popular_ratio': 0.2, 'observed_train_items': 89276, 'popular_items': 17856, 'unpopular_seen_items': 71420, 'unseen_items_in_test': 'calculated from test ground truth'}
+2026/09/19 16:30:49 - __main__ - INFO - 1125 - trainer - %s Test Overall------------------------------------------------------
+2026/09/19 16:30:49 - __main__ - INFO - 1129 - trainer - {'HR@5': 49.9136, 'NDCG@5': 38.1646, 'HR@10': 60.4586, 'NDCG@10': 41.5905, 'HR@20': 70.3512, 'NDCG@20': 44.1024}
+2026/09/19 16:30:49 - __main__ - INFO - 1220 - trainer - Source Test Group Size----------------------------------------------
+2026/09/19 16:30:49 - __main__ - INFO - 1225 - trainer - {'domain': 'Source', 'Overall_test_samples': 10422, 'Popular_test_samples': 7854, 'Unpopular_seen_test_samples': 1824, 'Unseen_test_samples': 744, 'Grouped_test_samples': 10422}
+2026/09/19 16:30:49 - __main__ - INFO - 1227 - trainer - Source Test Popular Ground Truth-------------------------------------
+2026/09/19 16:30:49 - __main__ - INFO - 1232 - trainer - {'HR@5': 65.5844, 'NDCG@5': 50.3352, 'HR@10': 78.1767, 'NDCG@10': 54.4395, 'HR@20': 88.2353, 'NDCG@20': 57.0076}
+2026/09/19 16:30:49 - __main__ - INFO - 1234 - trainer - Source Test Unpopular-Seen Ground Truth------------------------------
+2026/09/19 16:30:49 - __main__ - INFO - 1239 - trainer - {'HR@5': 2.7961, 'NDCG@5': 1.326, 'HR@10': 8.8268, 'NDCG@10': 3.2279, 'HR@20': 22.0395, 'NDCG@20': 6.5224}
+2026/09/19 16:30:49 - __main__ - INFO - 1243 - trainer - Source Test Unseen Ground Truth--------------------------------------
+2026/09/19 16:30:49 - __main__ - INFO - 1248 - trainer - {'HR@5': 0.0, 'NDCG@5': 0.0, 'HR@10': 0.0, 'NDCG@10': 0.0, 'HR@20': 0.0, 'NDCG@20': 0.0}
+2026/09/19 16:30:49 - __main__ - INFO - 1250 - trainer - Source Recommendation Popularity-------------------------------------
+2026/09/19 16:30:49 - __main__ - INFO - 1255 - trainer - {'PopularRatio@5': 93.6461, 'PopularRatio@10': 82.2894, 'PopularRatio@20': 61.8269}
+2026/09/19 16:30:49 - __main__ - INFO - 1258 - trainer - Best Eval---------------------------------------------------------
+2026/09/19 16:30:49 - __main__ - INFO - 1261 - trainer - {'Best_HR@5': 49.4531, 'Best_NDCG@5': 37.5251, 'Best_HR@10': 60.625, 'Best_NDCG@10': 41.1341, 'Best_HR@20': 70.5859, 'Best_NDCG@20': 43.6558}
+2026/09/19 16:30:49 - __main__ - INFO - 1262 - trainer - {'Best_epoch_HR@5': 15, 'Best_epoch_NDCG@5': 15, 'Best_epoch_HR@10': 15, 'Best_epoch_NDCG@10': 15, 'Best_epoch_HR@20': 15, 'Best_epoch_NDCG@20': 15}
+2026/09/19 16:30:49 - __main__ - INFO - 349 - trainer - Agent V1 Setup
+2026/09/19 16:30:49 - __main__ - INFO - 350 - trainer - {'Agent': 'V1 contextual-bandit policy', 'State': 'S1 exposure + S2 sequence popularity + S3 one-hot', 'Actions': ('none', 'd1', 'd2'), 'Reward': 'learning gain + lambda * tail-margin gain', 'tail_margin_lambda': 0.25, 'warmup_epochs': 1}
+2026/09/19 16:30:49 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:30:49 - __main__ - INFO - 670 - trainer - {'epoch': 0, 'batch': 0, 'actions': {'none': 407, 'd1': 46, 'd2': 59}, 'd2_applied': 59, 'reward_mean': 0.387746, 'learning_gain_mean': 0.365488, 'tail_margin_gain_mean': 0.310729, 'policy_loss': 0.0, 'entropy': 0.347737, 'mean_action_probability': [0.799, 0.0928, 0.1082]}
+2026/09/19 16:30:50 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:30:50 - __main__ - INFO - 670 - trainer - {'epoch': 0, 'batch': 20, 'actions': {'none': 423, 'd1': 41, 'd2': 48}, 'd2_applied': 48, 'reward_mean': 0.101058, 'learning_gain_mean': 0.093255, 'tail_margin_gain_mean': 0.114147, 'policy_loss': 0.0, 'entropy': 0.298641, 'mean_action_probability': [0.8277, 0.0796, 0.0927]}
+2026/09/19 16:30:50 - __main__ - INFO - 672 - trainer - Epoch: 0
+2026/09/19 16:30:50 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:30:50 - __main__ - INFO - 670 - trainer - {'epoch': 1, 'batch': 0, 'actions': {'none': 426, 'd1': 40, 'd2': 46}, 'd2_applied': 46, 'reward_mean': 0.122189, 'learning_gain_mean': 0.111537, 'tail_margin_gain_mean': 0.151499, 'policy_loss': -3.7e-05, 'entropy': 0.307246, 'mean_action_probability': [0.8235, 0.0825, 0.094]}
+2026/09/19 16:30:51 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:30:51 - __main__ - INFO - 670 - trainer - {'epoch': 1, 'batch': 20, 'actions': {'none': 420, 'd1': 48, 'd2': 44}, 'd2_applied': 44, 'reward_mean': 0.083111, 'learning_gain_mean': 0.075632, 'tail_margin_gain_mean': 0.10077, 'policy_loss': -0.014449, 'entropy': 0.32435, 'mean_action_probability': [0.8147, 0.0889, 0.0964]}
+2026/09/19 16:30:51 - __main__ - INFO - 672 - trainer - Epoch: 1
+2026/09/19 16:30:51 - __main__ - INFO - 690 - trainer - start predicting: 2026-09-19 16:30:51.499833
+2026/09/19 16:30:53 - __main__ - INFO - 727 - trainer - {'Best_HR@5': 6.9336, 'Best_NDCG@5': 3.9048, 'Best_HR@10': 14.1113, 'Best_NDCG@10': 6.2348, 'Best_HR@20': 27.4902, 'Best_NDCG@20': 9.5901}
+2026/09/19 16:30:53 - __main__ - INFO - 728 - trainer - {'Best_epoch_HR@5': 1, 'Best_epoch_NDCG@5': 1, 'Best_epoch_HR@10': 1, 'Best_epoch_NDCG@10': 1, 'Best_epoch_HR@20': 1, 'Best_epoch_NDCG@20': 1}
+2026/09/19 16:30:53 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:30:53 - __main__ - INFO - 670 - trainer - {'epoch': 2, 'batch': 0, 'actions': {'none': 422, 'd1': 47, 'd2': 43}, 'd2_applied': 43, 'reward_mean': 0.071183, 'learning_gain_mean': 0.063948, 'tail_margin_gain_mean': 0.090346, 'policy_loss': 0.000447, 'entropy': 0.349975, 'mean_action_probability': [0.8003, 0.0974, 0.1023]}
+2026/09/19 16:30:53 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:30:53 - __main__ - INFO - 670 - trainer - {'epoch': 2, 'batch': 20, 'actions': {'none': 423, 'd1': 44, 'd2': 45}, 'd2_applied': 45, 'reward_mean': 0.062821, 'learning_gain_mean': 0.059244, 'tail_margin_gain_mean': 0.048513, 'policy_loss': -0.02912, 'entropy': 0.322531, 'mean_action_probability': [0.8145, 0.0946, 0.091]}
+2026/09/19 16:30:54 - __main__ - INFO - 672 - trainer - Epoch: 2
+2026/09/19 16:30:54 - __main__ - INFO - 690 - trainer - start predicting: 2026-09-19 16:30:54.101474
+2026/09/19 16:30:55 - __main__ - INFO - 727 - trainer - {'Best_HR@5': 11.5234, 'Best_NDCG@5': 7.3001, 'Best_HR@10': 20.9961, 'Best_NDCG@10': 10.3461, 'Best_HR@20': 37.8906, 'Best_NDCG@20': 14.5777}
+2026/09/19 16:30:55 - __main__ - INFO - 728 - trainer - {'Best_epoch_HR@5': 2, 'Best_epoch_NDCG@5': 2, 'Best_epoch_HR@10': 2, 'Best_epoch_NDCG@10': 2, 'Best_epoch_HR@20': 2, 'Best_epoch_NDCG@20': 2}
+2026/09/19 16:30:55 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:30:55 - __main__ - INFO - 670 - trainer - {'epoch': 3, 'batch': 0, 'actions': {'none': 417, 'd1': 51, 'd2': 44}, 'd2_applied': 44, 'reward_mean': 0.090067, 'learning_gain_mean': 0.086069, 'tail_margin_gain_mean': 0.087619, 'policy_loss': -0.02657, 'entropy': 0.347763, 'mean_action_probability': [0.7995, 0.1053, 0.0952]}
+2026/09/19 16:30:56 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:30:56 - __main__ - INFO - 670 - trainer - {'epoch': 3, 'batch': 20, 'actions': {'none': 404, 'd1': 58, 'd2': 50}, 'd2_applied': 50, 'reward_mean': 0.052079, 'learning_gain_mean': 0.048959, 'tail_margin_gain_mean': 0.038264, 'policy_loss': -0.016863, 'entropy': 0.355976, 'mean_action_probability': [0.7921, 0.1139, 0.094]}
+2026/09/19 16:30:56 - __main__ - INFO - 672 - trainer - Epoch: 3
+2026/09/19 16:30:56 - __main__ - INFO - 690 - trainer - start predicting: 2026-09-19 16:30:56.598623
+2026/09/19 16:30:58 - __main__ - INFO - 727 - trainer - {'Best_HR@5': 17.8711, 'Best_NDCG@5': 11.6206, 'Best_HR@10': 29.0039, 'Best_NDCG@10': 15.2257, 'Best_HR@20': 45.0684, 'Best_NDCG@20': 19.2713}
+2026/09/19 16:30:58 - __main__ - INFO - 728 - trainer - {'Best_epoch_HR@5': 3, 'Best_epoch_NDCG@5': 3, 'Best_epoch_HR@10': 3, 'Best_epoch_NDCG@10': 3, 'Best_epoch_HR@20': 3, 'Best_epoch_NDCG@20': 3}
+2026/09/19 16:30:58 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:30:58 - __main__ - INFO - 670 - trainer - {'epoch': 4, 'batch': 0, 'actions': {'none': 416, 'd1': 55, 'd2': 41}, 'd2_applied': 41, 'reward_mean': 0.052135, 'learning_gain_mean': 0.051707, 'tail_margin_gain_mean': 0.081018, 'policy_loss': -0.014827, 'entropy': 0.317397, 'mean_action_probability': [0.8115, 0.1052, 0.0833]}
+2026/09/19 16:30:58 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:30:58 - __main__ - INFO - 670 - trainer - {'epoch': 4, 'batch': 20, 'actions': {'none': 414, 'd1': 55, 'd2': 43}, 'd2_applied': 43, 'reward_mean': 0.041695, 'learning_gain_mean': 0.039927, 'tail_margin_gain_mean': 0.026243, 'policy_loss': -0.004032, 'entropy': 0.291217, 'mean_action_probability': [0.8216, 0.1081, 0.0703]}
+2026/09/19 16:30:59 - __main__ - INFO - 672 - trainer - Epoch: 4
+2026/09/19 16:30:59 - __main__ - INFO - 690 - trainer - start predicting: 2026-09-19 16:30:59.058201
+2026/09/19 16:31:00 - __main__ - INFO - 727 - trainer - {'Best_HR@5': 22.5098, 'Best_NDCG@5': 15.0096, 'Best_HR@10': 33.7402, 'Best_NDCG@10': 18.6086, 'Best_HR@20': 50.6836, 'Best_NDCG@20': 22.8711}
+2026/09/19 16:31:00 - __main__ - INFO - 728 - trainer - {'Best_epoch_HR@5': 4, 'Best_epoch_NDCG@5': 4, 'Best_epoch_HR@10': 4, 'Best_epoch_NDCG@10': 4, 'Best_epoch_HR@20': 4, 'Best_epoch_NDCG@20': 4}
+2026/09/19 16:31:00 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:00 - __main__ - INFO - 670 - trainer - {'epoch': 5, 'batch': 0, 'actions': {'none': 419, 'd1': 52, 'd2': 41}, 'd2_applied': 41, 'reward_mean': 0.041771, 'learning_gain_mean': 0.040593, 'tail_margin_gain_mean': 0.01653, 'policy_loss': -0.024847, 'entropy': 0.307321, 'mean_action_probability': [0.8092, 0.1166, 0.0742]}
+2026/09/19 16:31:01 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:01 - __main__ - INFO - 670 - trainer - {'epoch': 5, 'batch': 20, 'actions': {'none': 416, 'd1': 61, 'd2': 35}, 'd2_applied': 35, 'reward_mean': 0.032287, 'learning_gain_mean': 0.030282, 'tail_margin_gain_mean': 0.026482, 'policy_loss': 0.001166, 'entropy': 0.322421, 'mean_action_probability': [0.7941, 0.1323, 0.0736]}
+2026/09/19 16:31:01 - __main__ - INFO - 672 - trainer - Epoch: 5
+2026/09/19 16:31:01 - __main__ - INFO - 690 - trainer - start predicting: 2026-09-19 16:31:01.510251
+2026/09/19 16:31:03 - __main__ - INFO - 727 - trainer - {'Best_HR@5': 27.2949, 'Best_NDCG@5': 18.7919, 'Best_HR@10': 38.0371, 'Best_NDCG@10': 22.2266, 'Best_HR@20': 53.9551, 'Best_NDCG@20': 26.2147}
+2026/09/19 16:31:03 - __main__ - INFO - 728 - trainer - {'Best_epoch_HR@5': 5, 'Best_epoch_NDCG@5': 5, 'Best_epoch_HR@10': 5, 'Best_epoch_NDCG@10': 5, 'Best_epoch_HR@20': 5, 'Best_epoch_NDCG@20': 5}
+2026/09/19 16:31:03 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:03 - __main__ - INFO - 670 - trainer - {'epoch': 6, 'batch': 0, 'actions': {'none': 403, 'd1': 75, 'd2': 34}, 'd2_applied': 34, 'reward_mean': 0.035651, 'learning_gain_mean': 0.035493, 'tail_margin_gain_mean': 0.002232, 'policy_loss': -0.012616, 'entropy': 0.298005, 'mean_action_probability': [0.8049, 0.1306, 0.0645]}
+2026/09/19 16:31:03 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:03 - __main__ - INFO - 670 - trainer - {'epoch': 6, 'batch': 20, 'actions': {'none': 403, 'd1': 73, 'd2': 36}, 'd2_applied': 36, 'reward_mean': 0.028766, 'learning_gain_mean': 0.027085, 'tail_margin_gain_mean': 0.023414, 'policy_loss': -0.016573, 'entropy': 0.296359, 'mean_action_probability': [0.7941, 0.1427, 0.0632]}
+2026/09/19 16:31:03 - __main__ - INFO - 672 - trainer - Epoch: 6
+2026/09/19 16:31:03 - __main__ - INFO - 690 - trainer - start predicting: 2026-09-19 16:31:03.980359
+2026/09/19 16:31:05 - __main__ - INFO - 727 - trainer - {'Best_HR@5': 28.5156, 'Best_NDCG@5': 20.3827, 'Best_HR@10': 39.8926, 'Best_NDCG@10': 24.0583, 'Best_HR@20': 55.6641, 'Best_NDCG@20': 28.0213}
+2026/09/19 16:31:05 - __main__ - INFO - 728 - trainer - {'Best_epoch_HR@5': 6, 'Best_epoch_NDCG@5': 6, 'Best_epoch_HR@10': 6, 'Best_epoch_NDCG@10': 6, 'Best_epoch_HR@20': 6, 'Best_epoch_NDCG@20': 6}
+2026/09/19 16:31:05 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:05 - __main__ - INFO - 670 - trainer - {'epoch': 7, 'batch': 0, 'actions': {'none': 389, 'd1': 89, 'd2': 34}, 'd2_applied': 34, 'reward_mean': 0.045114, 'learning_gain_mean': 0.038189, 'tail_margin_gain_mean': 0.087, 'policy_loss': -0.083465, 'entropy': 0.319054, 'mean_action_probability': [0.7649, 0.1707, 0.0644]}
+2026/09/19 16:31:06 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:06 - __main__ - INFO - 670 - trainer - {'epoch': 7, 'batch': 20, 'actions': {'none': 391, 'd1': 90, 'd2': 31}, 'd2_applied': 31, 'reward_mean': 0.028381, 'learning_gain_mean': 0.024778, 'tail_margin_gain_mean': 0.04792, 'policy_loss': -0.002611, 'entropy': 0.286972, 'mean_action_probability': [0.767, 0.1768, 0.0562]}
+2026/09/19 16:31:06 - __main__ - INFO - 672 - trainer - Epoch: 7
+2026/09/19 16:31:06 - __main__ - INFO - 690 - trainer - start predicting: 2026-09-19 16:31:06.446917
+2026/09/19 16:31:08 - __main__ - INFO - 727 - trainer - {'Best_HR@5': 31.7871, 'Best_NDCG@5': 22.7689, 'Best_HR@10': 42.4316, 'Best_NDCG@10': 26.1877, 'Best_HR@20': 56.8848, 'Best_NDCG@20': 29.7935}
+2026/09/19 16:31:08 - __main__ - INFO - 728 - trainer - {'Best_epoch_HR@5': 7, 'Best_epoch_NDCG@5': 7, 'Best_epoch_HR@10': 7, 'Best_epoch_NDCG@10': 7, 'Best_epoch_HR@20': 7, 'Best_epoch_NDCG@20': 7}
+2026/09/19 16:31:08 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:08 - __main__ - INFO - 670 - trainer - {'epoch': 8, 'batch': 0, 'actions': {'none': 385, 'd1': 97, 'd2': 30}, 'd2_applied': 30, 'reward_mean': 0.026274, 'learning_gain_mean': 0.02497, 'tail_margin_gain_mean': 0.017119, 'policy_loss': -0.042684, 'entropy': 0.282262, 'mean_action_probability': [0.7579, 0.1867, 0.0554]}
+2026/09/19 16:31:08 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:08 - __main__ - INFO - 670 - trainer - {'epoch': 8, 'batch': 20, 'actions': {'none': 393, 'd1': 87, 'd2': 32}, 'd2_applied': 32, 'reward_mean': 0.040394, 'learning_gain_mean': 0.039757, 'tail_margin_gain_mean': 0.00831, 'policy_loss': -0.059147, 'entropy': 0.265475, 'mean_action_probability': [0.7474, 0.2022, 0.0504]}
+2026/09/19 16:31:08 - __main__ - INFO - 672 - trainer - Epoch: 8
+2026/09/19 16:31:08 - __main__ - INFO - 690 - trainer - start predicting: 2026-09-19 16:31:08.964875
+2026/09/19 16:31:10 - __main__ - INFO - 727 - trainer - {'Best_HR@5': 32.9102, 'Best_NDCG@5': 24.3205, 'Best_HR@10': 43.2129, 'Best_NDCG@10': 27.6318, 'Best_HR@20': 57.7637, 'Best_NDCG@20': 31.306}
+2026/09/19 16:31:10 - __main__ - INFO - 728 - trainer - {'Best_epoch_HR@5': 8, 'Best_epoch_NDCG@5': 8, 'Best_epoch_HR@10': 8, 'Best_epoch_NDCG@10': 8, 'Best_epoch_HR@20': 8, 'Best_epoch_NDCG@20': 8}
+2026/09/19 16:31:10 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:10 - __main__ - INFO - 670 - trainer - {'epoch': 9, 'batch': 0, 'actions': {'none': 398, 'd1': 89, 'd2': 25}, 'd2_applied': 25, 'reward_mean': 0.039385, 'learning_gain_mean': 0.033224, 'tail_margin_gain_mean': 0.091432, 'policy_loss': -0.054474, 'entropy': 0.213486, 'mean_action_probability': [0.7712, 0.1913, 0.0375]}
+2026/09/19 16:31:11 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:11 - __main__ - INFO - 670 - trainer - {'epoch': 9, 'batch': 20, 'actions': {'none': 386, 'd1': 110, 'd2': 16}, 'd2_applied': 16, 'reward_mean': 0.039382, 'learning_gain_mean': 0.033814, 'tail_margin_gain_mean': 0.079185, 'policy_loss': -0.043042, 'entropy': 0.204141, 'mean_action_probability': [0.7568, 0.2105, 0.0328]}
+2026/09/19 16:31:11 - __main__ - INFO - 672 - trainer - Epoch: 9
+2026/09/19 16:31:11 - __main__ - INFO - 690 - trainer - start predicting: 2026-09-19 16:31:11.438902
+2026/09/19 16:31:13 - __main__ - INFO - 727 - trainer - {'Best_HR@5': 34.375, 'Best_NDCG@5': 25.4848, 'Best_HR@10': 44.2383, 'Best_NDCG@10': 28.6839, 'Best_HR@20': 58.1543, 'Best_NDCG@20': 32.178}
+2026/09/19 16:31:13 - __main__ - INFO - 728 - trainer - {'Best_epoch_HR@5': 9, 'Best_epoch_NDCG@5': 9, 'Best_epoch_HR@10': 9, 'Best_epoch_NDCG@10': 9, 'Best_epoch_HR@20': 9, 'Best_epoch_NDCG@20': 9}
+2026/09/19 16:31:13 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:13 - __main__ - INFO - 670 - trainer - {'epoch': 10, 'batch': 0, 'actions': {'none': 382, 'd1': 113, 'd2': 17}, 'd2_applied': 17, 'reward_mean': 0.03367, 'learning_gain_mean': 0.034073, 'tail_margin_gain_mean': -0.005726, 'policy_loss': -0.082233, 'entropy': 0.190168, 'mean_action_probability': [0.7533, 0.218, 0.0286]}
+2026/09/19 16:31:13 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:13 - __main__ - INFO - 670 - trainer - {'epoch': 10, 'batch': 20, 'actions': {'none': 386, 'd1': 107, 'd2': 19}, 'd2_applied': 19, 'reward_mean': 0.03343, 'learning_gain_mean': 0.027885, 'tail_margin_gain_mean': 0.082897, 'policy_loss': 0.016844, 'entropy': 0.16676, 'mean_action_probability': [0.76, 0.214, 0.026]}
+2026/09/19 16:31:13 - __main__ - INFO - 672 - trainer - Epoch: 10
+2026/09/19 16:31:13 - __main__ - INFO - 690 - trainer - start predicting: 2026-09-19 16:31:13.911332
+2026/09/19 16:31:15 - __main__ - INFO - 727 - trainer - {'Best_HR@5': 35.8887, 'Best_NDCG@5': 26.3627, 'Best_HR@10': 45.6543, 'Best_NDCG@10': 29.4979, 'Best_HR@20': 58.9355, 'Best_NDCG@20': 32.8165}
+2026/09/19 16:31:15 - __main__ - INFO - 728 - trainer - {'Best_epoch_HR@5': 10, 'Best_epoch_NDCG@5': 10, 'Best_epoch_HR@10': 10, 'Best_epoch_NDCG@10': 10, 'Best_epoch_HR@20': 10, 'Best_epoch_NDCG@20': 10}
+2026/09/19 16:31:15 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:15 - __main__ - INFO - 670 - trainer - {'epoch': 11, 'batch': 0, 'actions': {'none': 361, 'd1': 142, 'd2': 9}, 'd2_applied': 9, 'reward_mean': 0.033352, 'learning_gain_mean': 0.034146, 'tail_margin_gain_mean': -0.009974, 'policy_loss': -0.070105, 'entropy': 0.194829, 'mean_action_probability': [0.7128, 0.2565, 0.0307]}
+2026/09/19 16:31:16 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:16 - __main__ - INFO - 670 - trainer - {'epoch': 11, 'batch': 20, 'actions': {'none': 369, 'd1': 135, 'd2': 8}, 'd2_applied': 8, 'reward_mean': 0.044242, 'learning_gain_mean': 0.042844, 'tail_margin_gain_mean': 0.018711, 'policy_loss': -0.040602, 'entropy': 0.159677, 'mean_action_probability': [0.725, 0.2513, 0.0237]}
+2026/09/19 16:31:16 - __main__ - INFO - 672 - trainer - Epoch: 11
+2026/09/19 16:31:16 - __main__ - INFO - 690 - trainer - start predicting: 2026-09-19 16:31:16.438688
+2026/09/19 16:31:18 - __main__ - INFO - 727 - trainer - {'Best_HR@5': 36.5723, 'Best_NDCG@5': 26.9925, 'Best_HR@10': 46.4844, 'Best_NDCG@10': 30.1743, 'Best_HR@20': 59.082, 'Best_NDCG@20': 33.3371}
+2026/09/19 16:31:18 - __main__ - INFO - 728 - trainer - {'Best_epoch_HR@5': 11, 'Best_epoch_NDCG@5': 11, 'Best_epoch_HR@10': 11, 'Best_epoch_NDCG@10': 11, 'Best_epoch_HR@20': 11, 'Best_epoch_NDCG@20': 11}
+2026/09/19 16:31:18 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:18 - __main__ - INFO - 670 - trainer - {'epoch': 12, 'batch': 0, 'actions': {'none': 363, 'd1': 140, 'd2': 9}, 'd2_applied': 9, 'reward_mean': 0.037663, 'learning_gain_mean': 0.036848, 'tail_margin_gain_mean': 0.016779, 'policy_loss': -0.106597, 'entropy': 0.162459, 'mean_action_probability': [0.695, 0.2813, 0.0237]}
+2026/09/19 16:31:18 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:18 - __main__ - INFO - 670 - trainer - {'epoch': 12, 'batch': 20, 'actions': {'none': 365, 'd1': 134, 'd2': 13}, 'd2_applied': 13, 'reward_mean': 0.050724, 'learning_gain_mean': 0.056183, 'tail_margin_gain_mean': 0.021431, 'policy_loss': -0.030589, 'entropy': 0.149707, 'mean_action_probability': [0.7097, 0.2676, 0.0227]}
+2026/09/19 16:31:18 - __main__ - INFO - 672 - trainer - Epoch: 12
+2026/09/19 16:31:18 - __main__ - INFO - 690 - trainer - start predicting: 2026-09-19 16:31:18.878389
+2026/09/19 16:31:20 - __main__ - INFO - 727 - trainer - {'Best_HR@5': 36.5723, 'Best_NDCG@5': 26.9925, 'Best_HR@10': 47.3633, 'Best_NDCG@10': 30.3339, 'Best_HR@20': 59.2773, 'Best_NDCG@20': 33.3371}
+2026/09/19 16:31:20 - __main__ - INFO - 728 - trainer - {'Best_epoch_HR@5': 11, 'Best_epoch_NDCG@5': 11, 'Best_epoch_HR@10': 12, 'Best_epoch_NDCG@10': 12, 'Best_epoch_HR@20': 12, 'Best_epoch_NDCG@20': 11}
+2026/09/19 16:31:20 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:20 - __main__ - INFO - 670 - trainer - {'epoch': 13, 'batch': 0, 'actions': {'none': 378, 'd1': 127, 'd2': 7}, 'd2_applied': 7, 'reward_mean': 0.042153, 'learning_gain_mean': 0.041879, 'tail_margin_gain_mean': 0.050121, 'policy_loss': -0.013134, 'entropy': 0.127551, 'mean_action_probability': [0.7353, 0.2454, 0.0193]}
+2026/09/19 16:31:21 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:21 - __main__ - INFO - 670 - trainer - {'epoch': 13, 'batch': 20, 'actions': {'none': 376, 'd1': 128, 'd2': 8}, 'd2_applied': 8, 'reward_mean': 0.020634, 'learning_gain_mean': 0.022062, 'tail_margin_gain_mean': -0.020738, 'policy_loss': -0.138652, 'entropy': 0.12003, 'mean_action_probability': [0.7393, 0.2421, 0.0186]}
+2026/09/19 16:31:21 - __main__ - INFO - 672 - trainer - Epoch: 13
+2026/09/19 16:31:21 - __main__ - INFO - 690 - trainer - start predicting: 2026-09-19 16:31:21.350146
+2026/09/19 16:31:22 - __main__ - INFO - 727 - trainer - {'Best_HR@5': 36.5723, 'Best_NDCG@5': 26.9925, 'Best_HR@10': 47.3633, 'Best_NDCG@10': 30.3657, 'Best_HR@20': 59.2773, 'Best_NDCG@20': 33.5113}
+2026/09/19 16:31:22 - __main__ - INFO - 728 - trainer - {'Best_epoch_HR@5': 11, 'Best_epoch_NDCG@5': 11, 'Best_epoch_HR@10': 12, 'Best_epoch_NDCG@10': 13, 'Best_epoch_HR@20': 12, 'Best_epoch_NDCG@20': 13}
+2026/09/19 16:31:22 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:22 - __main__ - INFO - 670 - trainer - {'epoch': 14, 'batch': 0, 'actions': {'none': 364, 'd1': 136, 'd2': 12}, 'd2_applied': 12, 'reward_mean': 0.044767, 'learning_gain_mean': 0.033152, 'tail_margin_gain_mean': 0.154461, 'policy_loss': -0.136664, 'entropy': 0.1235, 'mean_action_probability': [0.714, 0.2673, 0.0187]}
+2026/09/19 16:31:23 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:23 - __main__ - INFO - 670 - trainer - {'epoch': 14, 'batch': 20, 'actions': {'none': 372, 'd1': 130, 'd2': 10}, 'd2_applied': 10, 'reward_mean': 0.054579, 'learning_gain_mean': 0.046918, 'tail_margin_gain_mean': 0.108205, 'policy_loss': 0.015751, 'entropy': 0.10875, 'mean_action_probability': [0.7295, 0.2545, 0.016]}
+2026/09/19 16:31:23 - __main__ - INFO - 672 - trainer - Epoch: 14
+2026/09/19 16:31:23 - __main__ - INFO - 690 - trainer - start predicting: 2026-09-19 16:31:23.811811
+2026/09/19 16:31:25 - __main__ - INFO - 727 - trainer - {'Best_HR@5': 37.5488, 'Best_NDCG@5': 27.4819, 'Best_HR@10': 47.3633, 'Best_NDCG@10': 30.6394, 'Best_HR@20': 59.2773, 'Best_NDCG@20': 33.6176}
+2026/09/19 16:31:25 - __main__ - INFO - 728 - trainer - {'Best_epoch_HR@5': 14, 'Best_epoch_NDCG@5': 14, 'Best_epoch_HR@10': 12, 'Best_epoch_NDCG@10': 14, 'Best_epoch_HR@20': 12, 'Best_epoch_NDCG@20': 14}
+2026/09/19 16:31:25 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:25 - __main__ - INFO - 670 - trainer - {'epoch': 15, 'batch': 0, 'actions': {'none': 349, 'd1': 150, 'd2': 13}, 'd2_applied': 13, 'reward_mean': 0.033618, 'learning_gain_mean': 0.031186, 'tail_margin_gain_mean': 0.029293, 'policy_loss': -0.084103, 'entropy': 0.117598, 'mean_action_probability': [0.6813, 0.302, 0.0167]}
+2026/09/19 16:31:25 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:25 - __main__ - INFO - 670 - trainer - {'epoch': 15, 'batch': 20, 'actions': {'none': 352, 'd1': 152, 'd2': 8}, 'd2_applied': 8, 'reward_mean': 0.038212, 'learning_gain_mean': 0.031308, 'tail_margin_gain_mean': 0.086748, 'policy_loss': 0.04088, 'entropy': 0.093671, 'mean_action_probability': [0.692, 0.2958, 0.0122]}
+2026/09/19 16:31:26 - __main__ - INFO - 672 - trainer - Epoch: 15
+2026/09/19 16:31:26 - __main__ - INFO - 690 - trainer - start predicting: 2026-09-19 16:31:26.270585
+2026/09/19 16:31:27 - __main__ - INFO - 727 - trainer - {'Best_HR@5': 38.1348, 'Best_NDCG@5': 28.2159, 'Best_HR@10': 47.3633, 'Best_NDCG@10': 31.1044, 'Best_HR@20': 59.7656, 'Best_NDCG@20': 34.2892}
+2026/09/19 16:31:27 - __main__ - INFO - 728 - trainer - {'Best_epoch_HR@5': 15, 'Best_epoch_NDCG@5': 15, 'Best_epoch_HR@10': 12, 'Best_epoch_NDCG@10': 15, 'Best_epoch_HR@20': 15, 'Best_epoch_NDCG@20': 15}
+2026/09/19 16:31:27 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:27 - __main__ - INFO - 670 - trainer - {'epoch': 16, 'batch': 0, 'actions': {'none': 360, 'd1': 143, 'd2': 9}, 'd2_applied': 9, 'reward_mean': 0.033611, 'learning_gain_mean': 0.033477, 'tail_margin_gain_mean': 0.001808, 'policy_loss': 0.02426, 'entropy': 0.08455, 'mean_action_probability': [0.7124, 0.2766, 0.011]}
+2026/09/19 16:31:28 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:28 - __main__ - INFO - 670 - trainer - {'epoch': 16, 'batch': 20, 'actions': {'none': 370, 'd1': 135, 'd2': 7}, 'd2_applied': 7, 'reward_mean': 0.036871, 'learning_gain_mean': 0.036038, 'tail_margin_gain_mean': 0.01161, 'policy_loss': 0.120365, 'entropy': 0.070585, 'mean_action_probability': [0.7204, 0.271, 0.0087]}
+2026/09/19 16:31:28 - __main__ - INFO - 672 - trainer - Epoch: 16
+2026/09/19 16:31:28 - __main__ - INFO - 690 - trainer - start predicting: 2026-09-19 16:31:28.732514
+2026/09/19 16:31:30 - __main__ - INFO - 727 - trainer - {'Best_HR@5': 38.1348, 'Best_NDCG@5': 28.2159, 'Best_HR@10': 47.3633, 'Best_NDCG@10': 31.1295, 'Best_HR@20': 59.9609, 'Best_NDCG@20': 34.3512}
+2026/09/19 16:31:30 - __main__ - INFO - 728 - trainer - {'Best_epoch_HR@5': 15, 'Best_epoch_NDCG@5': 15, 'Best_epoch_HR@10': 12, 'Best_epoch_NDCG@10': 16, 'Best_epoch_HR@20': 16, 'Best_epoch_NDCG@20': 16}
+2026/09/19 16:31:30 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:30 - __main__ - INFO - 670 - trainer - {'epoch': 17, 'batch': 0, 'actions': {'none': 359, 'd1': 148, 'd2': 5}, 'd2_applied': 5, 'reward_mean': 0.035982, 'learning_gain_mean': 0.033538, 'tail_margin_gain_mean': 0.032299, 'policy_loss': -0.016469, 'entropy': 0.070278, 'mean_action_probability': [0.7047, 0.287, 0.0083]}
+2026/09/19 16:31:30 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:30 - __main__ - INFO - 670 - trainer - {'epoch': 17, 'batch': 20, 'actions': {'none': 351, 'd1': 155, 'd2': 6}, 'd2_applied': 6, 'reward_mean': 0.055241, 'learning_gain_mean': 0.047366, 'tail_margin_gain_mean': 0.098343, 'policy_loss': -0.007224, 'entropy': 0.07404, 'mean_action_probability': [0.6874, 0.3037, 0.0089]}
+2026/09/19 16:31:31 - __main__ - INFO - 672 - trainer - Epoch: 17
+2026/09/19 16:31:31 - __main__ - INFO - 690 - trainer - start predicting: 2026-09-19 16:31:31.242692
+2026/09/19 16:31:32 - __main__ - INFO - 727 - trainer - {'Best_HR@5': 38.1348, 'Best_NDCG@5': 28.2159, 'Best_HR@10': 47.3633, 'Best_NDCG@10': 31.1295, 'Best_HR@20': 60.1562, 'Best_NDCG@20': 34.3512}
+2026/09/19 16:31:32 - __main__ - INFO - 728 - trainer - {'Best_epoch_HR@5': 15, 'Best_epoch_NDCG@5': 15, 'Best_epoch_HR@10': 12, 'Best_epoch_NDCG@10': 16, 'Best_epoch_HR@20': 17, 'Best_epoch_NDCG@20': 16}
+2026/09/19 16:31:32 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:32 - __main__ - INFO - 670 - trainer - {'epoch': 18, 'batch': 0, 'actions': {'none': 373, 'd1': 138, 'd2': 1}, 'd2_applied': 1, 'reward_mean': 0.045316, 'learning_gain_mean': 0.041755, 'tail_margin_gain_mean': 0.050647, 'policy_loss': 0.152414, 'entropy': 0.054805, 'mean_action_probability': [0.7243, 0.2695, 0.0062]}
+2026/09/19 16:31:33 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:33 - __main__ - INFO - 670 - trainer - {'epoch': 18, 'batch': 20, 'actions': {'none': 367, 'd1': 143, 'd2': 2}, 'd2_applied': 2, 'reward_mean': 0.059903, 'learning_gain_mean': 0.05373, 'tail_margin_gain_mean': 0.085416, 'policy_loss': 0.037191, 'entropy': 0.053948, 'mean_action_probability': [0.7163, 0.2776, 0.0061]}
+2026/09/19 16:31:33 - __main__ - INFO - 672 - trainer - Epoch: 18
+2026/09/19 16:31:33 - __main__ - INFO - 690 - trainer - start predicting: 2026-09-19 16:31:33.659091
+2026/09/19 16:31:35 - __main__ - INFO - 727 - trainer - {'Best_HR@5': 38.1348, 'Best_NDCG@5': 28.2159, 'Best_HR@10': 47.8516, 'Best_NDCG@10': 31.1295, 'Best_HR@20': 60.1562, 'Best_NDCG@20': 34.3512}
+2026/09/19 16:31:35 - __main__ - INFO - 728 - trainer - {'Best_epoch_HR@5': 15, 'Best_epoch_NDCG@5': 15, 'Best_epoch_HR@10': 18, 'Best_epoch_NDCG@10': 16, 'Best_epoch_HR@20': 17, 'Best_epoch_NDCG@20': 16}
+2026/09/19 16:31:35 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:35 - __main__ - INFO - 670 - trainer - {'epoch': 19, 'batch': 0, 'actions': {'none': 354, 'd1': 155, 'd2': 3}, 'd2_applied': 3, 'reward_mean': 0.054083, 'learning_gain_mean': 0.047699, 'tail_margin_gain_mean': 0.08071, 'policy_loss': -0.020448, 'entropy': 0.061823, 'mean_action_probability': [0.6896, 0.3032, 0.0072]}
+2026/09/19 16:31:35 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:35 - __main__ - INFO - 670 - trainer - {'epoch': 19, 'batch': 20, 'actions': {'none': 339, 'd1': 168, 'd2': 5}, 'd2_applied': 5, 'reward_mean': 0.051816, 'learning_gain_mean': 0.04582, 'tail_margin_gain_mean': 0.069775, 'policy_loss': 0.059826, 'entropy': 0.063223, 'mean_action_probability': [0.6623, 0.3304, 0.0073]}
+2026/09/19 16:31:36 - __main__ - INFO - 672 - trainer - Epoch: 19
+2026/09/19 16:31:36 - __main__ - INFO - 690 - trainer - start predicting: 2026-09-19 16:31:36.095972
+2026/09/19 16:31:37 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:37 - __main__ - INFO - 670 - trainer - {'epoch': 20, 'batch': 0, 'actions': {'none': 361, 'd1': 149, 'd2': 2}, 'd2_applied': 2, 'reward_mean': 0.054409, 'learning_gain_mean': 0.054305, 'tail_margin_gain_mean': 0.018954, 'policy_loss': 0.005512, 'entropy': 0.050922, 'mean_action_probability': [0.7022, 0.2923, 0.0055]}
+2026/09/19 16:31:38 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:38 - __main__ - INFO - 670 - trainer - {'epoch': 20, 'batch': 20, 'actions': {'none': 369, 'd1': 138, 'd2': 5}, 'd2_applied': 5, 'reward_mean': 0.046825, 'learning_gain_mean': 0.041857, 'tail_margin_gain_mean': 0.069693, 'policy_loss': -0.035896, 'entropy': 0.047215, 'mean_action_probability': [0.7195, 0.2754, 0.0051]}
+2026/09/19 16:31:38 - __main__ - INFO - 672 - trainer - Epoch: 20
+2026/09/19 16:31:38 - __main__ - INFO - 690 - trainer - start predicting: 2026-09-19 16:31:38.539002
+2026/09/19 16:31:40 - __main__ - INFO - 727 - trainer - {'Best_HR@5': 38.1348, 'Best_NDCG@5': 28.2159, 'Best_HR@10': 47.8516, 'Best_NDCG@10': 31.1295, 'Best_HR@20': 60.2539, 'Best_NDCG@20': 34.3512}
+2026/09/19 16:31:40 - __main__ - INFO - 728 - trainer - {'Best_epoch_HR@5': 15, 'Best_epoch_NDCG@5': 15, 'Best_epoch_HR@10': 18, 'Best_epoch_NDCG@10': 16, 'Best_epoch_HR@20': 20, 'Best_epoch_NDCG@20': 16}
+2026/09/19 16:31:40 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:40 - __main__ - INFO - 670 - trainer - {'epoch': 21, 'batch': 0, 'actions': {'none': 366, 'd1': 146, 'd2': 0}, 'd2_applied': 0, 'reward_mean': 0.065345, 'learning_gain_mean': 0.055915, 'tail_margin_gain_mean': 0.127898, 'policy_loss': -0.004862, 'entropy': 0.047231, 'mean_action_probability': [0.7097, 0.2853, 0.005]}
+2026/09/19 16:31:40 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:40 - __main__ - INFO - 670 - trainer - {'epoch': 21, 'batch': 20, 'actions': {'none': 342, 'd1': 167, 'd2': 3}, 'd2_applied': 3, 'reward_mean': 0.071135, 'learning_gain_mean': 0.064415, 'tail_margin_gain_mean': 0.080488, 'policy_loss': -0.018036, 'entropy': 0.048285, 'mean_action_probability': [0.6707, 0.3244, 0.0049]}
+2026/09/19 16:31:40 - __main__ - INFO - 672 - trainer - Epoch: 21
+2026/09/19 16:31:40 - __main__ - INFO - 690 - trainer - start predicting: 2026-09-19 16:31:40.988365
+2026/09/19 16:31:42 - __main__ - INFO - 727 - trainer - {'Best_HR@5': 38.1348, 'Best_NDCG@5': 28.2159, 'Best_HR@10': 47.9492, 'Best_NDCG@10': 31.1295, 'Best_HR@20': 60.2539, 'Best_NDCG@20': 34.3512}
+2026/09/19 16:31:42 - __main__ - INFO - 728 - trainer - {'Best_epoch_HR@5': 15, 'Best_epoch_NDCG@5': 15, 'Best_epoch_HR@10': 21, 'Best_epoch_NDCG@10': 16, 'Best_epoch_HR@20': 20, 'Best_epoch_NDCG@20': 16}
+2026/09/19 16:31:42 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:42 - __main__ - INFO - 670 - trainer - {'epoch': 22, 'batch': 0, 'actions': {'none': 364, 'd1': 145, 'd2': 3}, 'd2_applied': 3, 'reward_mean': 0.069845, 'learning_gain_mean': 0.068143, 'tail_margin_gain_mean': 0.102712, 'policy_loss': -0.017777, 'entropy': 0.044924, 'mean_action_probability': [0.7114, 0.2839, 0.0047]}
+2026/09/19 16:31:43 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:43 - __main__ - INFO - 670 - trainer - {'epoch': 22, 'batch': 20, 'actions': {'none': 358, 'd1': 153, 'd2': 1}, 'd2_applied': 1, 'reward_mean': 0.077121, 'learning_gain_mean': 0.07612, 'tail_margin_gain_mean': 0.179169, 'policy_loss': -0.013128, 'entropy': 0.040326, 'mean_action_probability': [0.6972, 0.2988, 0.004]}
+2026/09/19 16:31:43 - __main__ - INFO - 672 - trainer - Epoch: 22
+2026/09/19 16:31:43 - __main__ - INFO - 690 - trainer - start predicting: 2026-09-19 16:31:43.472603
+2026/09/19 16:31:45 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:45 - __main__ - INFO - 670 - trainer - {'epoch': 23, 'batch': 0, 'actions': {'none': 347, 'd1': 163, 'd2': 2}, 'd2_applied': 2, 'reward_mean': 0.087461, 'learning_gain_mean': 0.074158, 'tail_margin_gain_mean': 0.163144, 'policy_loss': -0.072852, 'entropy': 0.039649, 'mean_action_probability': [0.6776, 0.3186, 0.0038]}
+2026/09/19 16:31:45 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:45 - __main__ - INFO - 670 - trainer - {'epoch': 23, 'batch': 20, 'actions': {'none': 363, 'd1': 149, 'd2': 0}, 'd2_applied': 0, 'reward_mean': 0.066834, 'learning_gain_mean': 0.067336, 'tail_margin_gain_mean': 0.033539, 'policy_loss': -0.000155, 'entropy': 0.038104, 'mean_action_probability': [0.7127, 0.2837, 0.0037]}
+2026/09/19 16:31:45 - __main__ - INFO - 672 - trainer - Epoch: 23
+2026/09/19 16:31:45 - __main__ - INFO - 690 - trainer - start predicting: 2026-09-19 16:31:45.919471
+2026/09/19 16:31:47 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:47 - __main__ - INFO - 670 - trainer - {'epoch': 24, 'batch': 0, 'actions': {'none': 343, 'd1': 168, 'd2': 1}, 'd2_applied': 1, 'reward_mean': 0.071754, 'learning_gain_mean': 0.064842, 'tail_margin_gain_mean': 0.083275, 'policy_loss': -0.044119, 'entropy': 0.040916, 'mean_action_probability': [0.6719, 0.3243, 0.0038]}
+2026/09/19 16:31:48 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:48 - __main__ - INFO - 670 - trainer - {'epoch': 24, 'batch': 20, 'actions': {'none': 355, 'd1': 155, 'd2': 2}, 'd2_applied': 2, 'reward_mean': 0.059753, 'learning_gain_mean': 0.057125, 'tail_margin_gain_mean': 0.03343, 'policy_loss': -0.105182, 'entropy': 0.035247, 'mean_action_probability': [0.6888, 0.3079, 0.0033]}
+2026/09/19 16:31:48 - __main__ - INFO - 672 - trainer - Epoch: 24
+2026/09/19 16:31:48 - __main__ - INFO - 690 - trainer - start predicting: 2026-09-19 16:31:48.406205
+2026/09/19 16:31:49 - __main__ - INFO - 727 - trainer - {'Best_HR@5': 38.1348, 'Best_NDCG@5': 28.2159, 'Best_HR@10': 47.9492, 'Best_NDCG@10': 31.1295, 'Best_HR@20': 60.791, 'Best_NDCG@20': 34.3512}
+2026/09/19 16:31:49 - __main__ - INFO - 728 - trainer - {'Best_epoch_HR@5': 15, 'Best_epoch_NDCG@5': 15, 'Best_epoch_HR@10': 21, 'Best_epoch_NDCG@10': 16, 'Best_epoch_HR@20': 24, 'Best_epoch_NDCG@20': 16}
+2026/09/19 16:31:50 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:50 - __main__ - INFO - 670 - trainer - {'epoch': 25, 'batch': 0, 'actions': {'none': 383, 'd1': 126, 'd2': 3}, 'd2_applied': 3, 'reward_mean': 0.076751, 'learning_gain_mean': 0.071142, 'tail_margin_gain_mean': 0.088367, 'policy_loss': -0.090876, 'entropy': 0.024948, 'mean_action_probability': [0.7484, 0.2494, 0.0022]}
+2026/09/19 16:31:50 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:50 - __main__ - INFO - 670 - trainer - {'epoch': 25, 'batch': 20, 'actions': {'none': 351, 'd1': 160, 'd2': 1}, 'd2_applied': 1, 'reward_mean': 0.075293, 'learning_gain_mean': 0.067479, 'tail_margin_gain_mean': 0.098781, 'policy_loss': -0.035148, 'entropy': 0.029188, 'mean_action_probability': [0.6863, 0.3112, 0.0025]}
+2026/09/19 16:31:50 - __main__ - INFO - 672 - trainer - Epoch: 25
+2026/09/19 16:31:50 - __main__ - INFO - 690 - trainer - start predicting: 2026-09-19 16:31:50.906239
+2026/09/19 16:31:52 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:52 - __main__ - INFO - 670 - trainer - {'epoch': 26, 'batch': 0, 'actions': {'none': 370, 'd1': 141, 'd2': 1}, 'd2_applied': 1, 'reward_mean': 0.068002, 'learning_gain_mean': 0.059937, 'tail_margin_gain_mean': 0.115516, 'policy_loss': -0.040818, 'entropy': 0.020761, 'mean_action_probability': [0.7225, 0.2758, 0.0017]}
+2026/09/19 16:31:53 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:53 - __main__ - INFO - 670 - trainer - {'epoch': 26, 'batch': 20, 'actions': {'none': 355, 'd1': 154, 'd2': 3}, 'd2_applied': 3, 'reward_mean': 0.077884, 'learning_gain_mean': 0.073185, 'tail_margin_gain_mean': 0.060914, 'policy_loss': -0.094162, 'entropy': 0.021227, 'mean_action_probability': [0.6932, 0.305, 0.0017]}
+2026/09/19 16:31:53 - __main__ - INFO - 672 - trainer - Epoch: 26
+2026/09/19 16:31:53 - __main__ - INFO - 690 - trainer - start predicting: 2026-09-19 16:31:53.397388
+2026/09/19 16:31:55 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:55 - __main__ - INFO - 670 - trainer - {'epoch': 27, 'batch': 0, 'actions': {'none': 361, 'd1': 150, 'd2': 1}, 'd2_applied': 1, 'reward_mean': 0.097987, 'learning_gain_mean': 0.087996, 'tail_margin_gain_mean': 0.133737, 'policy_loss': -0.030132, 'entropy': 0.019454, 'mean_action_probability': [0.7029, 0.2956, 0.0016]}
+2026/09/19 16:31:55 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:55 - __main__ - INFO - 670 - trainer - {'epoch': 27, 'batch': 20, 'actions': {'none': 358, 'd1': 154, 'd2': 0}, 'd2_applied': 0, 'reward_mean': 0.098078, 'learning_gain_mean': 0.086972, 'tail_margin_gain_mean': 0.146741, 'policy_loss': 0.053869, 'entropy': 0.019905, 'mean_action_probability': [0.699, 0.2994, 0.0016]}
+2026/09/19 16:31:55 - __main__ - INFO - 672 - trainer - Epoch: 27
+2026/09/19 16:31:55 - __main__ - INFO - 690 - trainer - start predicting: 2026-09-19 16:31:55.873031
+2026/09/19 16:31:57 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:57 - __main__ - INFO - 670 - trainer - {'epoch': 28, 'batch': 0, 'actions': {'none': 362, 'd1': 149, 'd2': 1}, 'd2_applied': 1, 'reward_mean': 0.087766, 'learning_gain_mean': 0.08165, 'tail_margin_gain_mean': 0.083506, 'policy_loss': -0.022885, 'entropy': 0.019103, 'mean_action_probability': [0.7087, 0.2898, 0.0015]}
+2026/09/19 16:31:58 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:58 - __main__ - INFO - 670 - trainer - {'epoch': 28, 'batch': 20, 'actions': {'none': 346, 'd1': 165, 'd2': 1}, 'd2_applied': 1, 'reward_mean': 0.104034, 'learning_gain_mean': 0.092099, 'tail_margin_gain_mean': 0.147251, 'policy_loss': -0.001623, 'entropy': 0.020806, 'mean_action_probability': [0.6776, 0.3208, 0.0016]}
+2026/09/19 16:31:58 - __main__ - INFO - 672 - trainer - Epoch: 28
+2026/09/19 16:31:58 - __main__ - INFO - 690 - trainer - start predicting: 2026-09-19 16:31:58.344502
+2026/09/19 16:31:59 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:31:59 - __main__ - INFO - 670 - trainer - {'epoch': 29, 'batch': 0, 'actions': {'none': 381, 'd1': 131, 'd2': 0}, 'd2_applied': 0, 'reward_mean': 0.099112, 'learning_gain_mean': 0.087736, 'tail_margin_gain_mean': 0.17651, 'policy_loss': 0.009609, 'entropy': 0.014257, 'mean_action_probability': [0.7434, 0.2555, 0.0011]}
+2026/09/19 16:32:00 - __main__ - INFO - 669 - trainer - Agent V1 Batch
+2026/09/19 16:32:00 - __main__ - INFO - 670 - trainer - {'epoch': 29, 'batch': 20, 'actions': {'none': 357, 'd1': 154, 'd2': 1}, 'd2_applied': 1, 'reward_mean': 0.099451, 'learning_gain_mean': 0.093721, 'tail_margin_gain_mean': 0.075224, 'policy_loss': -0.038241, 'entropy': 0.015687, 'mean_action_probability': [0.6966, 0.3022, 0.0012]}
+2026/09/19 16:32:00 - __main__ - INFO - 672 - trainer - Epoch: 29
+2026/09/19 16:32:00 - __main__ - INFO - 690 - trainer - start predicting: 2026-09-19 16:32:00.819131
+2026/09/19 16:32:02 - __main__ - INFO - 737 - trainer - {'Best_HR@5': 38.1348, 'Best_NDCG@5': 28.2159, 'Best_HR@10': 47.9492, 'Best_NDCG@10': 31.1295, 'Best_HR@20': 60.791, 'Best_NDCG@20': 34.3512}
+2026/09/19 16:32:02 - __main__ - INFO - 738 - trainer - {'Best_epoch_HR@5': 15, 'Best_epoch_NDCG@5': 15, 'Best_epoch_HR@10': 21, 'Best_epoch_NDCG@10': 16, 'Best_epoch_HR@20': 24, 'Best_epoch_NDCG@20': 16}
+2026/09/19 16:32:02 - __main__ - INFO - 844 - trainer - Target Popularity Definition---------------------------------------------
+2026/09/19 16:32:02 - __main__ - INFO - 849 - trainer - {'domain': 'Target', 'popular_ratio': 0.2, 'observed_train_items': 21856, 'popular_items': 4372, 'unpopular_seen_items': 17484, 'unseen_items_in_test': 'calculated from test ground truth'}
+2026/09/19 16:32:04 - __main__ - INFO - 1125 - trainer - %s Test Overall------------------------------------------------------
+2026/09/19 16:32:04 - __main__ - INFO - 1129 - trainer - {'HR@5': 36.8677, 'NDCG@5': 27.8424, 'HR@10': 48.93, 'NDCG@10': 31.7322, 'HR@20': 62.1595, 'NDCG@20': 35.044}
+2026/09/19 16:32:04 - __main__ - INFO - 1220 - trainer - Target Test Group Size----------------------------------------------
+2026/09/19 16:32:04 - __main__ - INFO - 1225 - trainer - {'domain': 'Target', 'Overall_test_samples': 2056, 'Popular_test_samples': 1372, 'Unpopular_seen_test_samples': 505, 'Unseen_test_samples': 179, 'Grouped_test_samples': 2056}
+2026/09/19 16:32:04 - __main__ - INFO - 1227 - trainer - Target Test Popular Ground Truth-------------------------------------
+2026/09/19 16:32:04 - __main__ - INFO - 1232 - trainer - {'HR@5': 53.7901, 'NDCG@5': 40.981, 'HR@10': 69.1691, 'NDCG@10': 45.9501, 'HR@20': 83.1633, 'NDCG@20': 49.4715}
+2026/09/19 16:32:04 - __main__ - INFO - 1234 - trainer - Target Test Unpopular-Seen Ground Truth------------------------------
+2026/09/19 16:32:04 - __main__ - INFO - 1239 - trainer - {'HR@5': 3.9604, 'NDCG@5': 2.016, 'HR@10': 11.2871, 'NDCG@10': 4.3524, 'HR@20': 27.1287, 'NDCG@20': 8.2684}
+2026/09/19 16:32:04 - __main__ - INFO - 1243 - trainer - Target Test Unseen Ground Truth--------------------------------------
+2026/09/19 16:32:04 - __main__ - INFO - 1248 - trainer - {'HR@5': 0.0, 'NDCG@5': 0.0, 'HR@10': 0.0, 'NDCG@10': 0.0, 'HR@20': 0.0, 'NDCG@20': 0.0}
+2026/09/19 16:32:04 - __main__ - INFO - 1250 - trainer - Target Recommendation Popularity-------------------------------------
+2026/09/19 16:32:04 - __main__ - INFO - 1255 - trainer - {'PopularRatio@5': 83.0934, 'PopularRatio@10': 69.9416, 'PopularRatio@20': 54.8492}
+2026/09/19 16:32:04 - __main__ - INFO - 1258 - trainer - Best Eval---------------------------------------------------------
+2026/09/19 16:32:04 - __main__ - INFO - 1261 - trainer - {'Best_HR@5': 38.1348, 'Best_NDCG@5': 28.2159, 'Best_HR@10': 47.9492, 'Best_NDCG@10': 31.1295, 'Best_HR@20': 60.791, 'Best_NDCG@20': 34.3512}
+2026/09/19 16:32:04 - __main__ - INFO - 1262 - trainer - {'Best_epoch_HR@5': 15, 'Best_epoch_NDCG@5': 15, 'Best_epoch_HR@10': 21, 'Best_epoch_NDCG@10': 16, 'Best_epoch_HR@20': 24, 'Best_epoch_NDCG@20': 16}
+2026/09/19 16:32:04 - __main__ - INFO - 188 - main - Target model saved at: ./saved_model/movie_video/target_model.pth

@@ -7,7 +7,7 @@ import numpy as np
 import logging
 import time
 from model import create_model_diffu, Att_Diffuse_model
-from trainer import model_train,analyze_e_sequence_popularity_distribution, split_target_train_meta_data, run_experiment_f_meta_check, run_experiment_f_e_probe, run_experiment_f_e_virtual_probe, run_experiment_f_e_v5_batch_probe
+from trainer import model_train
 import pandas as pd
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
@@ -34,34 +34,23 @@ parser.add_argument('--decay_step', type=int, default=100, help='Decay step for 
 parser.add_argument('--gamma', type=float, default=0.1, help='Gamma for StepLR')
 parser.add_argument('--metric_ks', nargs='+', type=int, default=[5, 10, 20], help='ks for Metric@k')
 parser.add_argument('--popular_ratio', type=float, default=0.2, help='Top ratio of target-domain training items treated as popular')
-parser.add_argument('--inspect_e_distribution', type=int, default=0, choices=[0, 1], help='Inspect Experiment E Sequence Popular Ratio distribution and exit')
 parser.add_argument('--group_alignment', type=int, default=1, choices=[0, 1], help='Use Popular/Tail group-aware shared alignment')
 parser.add_argument('--group_context_threshold', type=float, default=0.5, help='Threshold for Popular/Tail sequence context')
 parser.add_argument('--group_pop_weight', type=float, default=1.0, help='Weight for Popular-to-Popular MMD')
 parser.add_argument('--group_tail_weight', type=float, default=1.0, help='Weight for Tail-to-Tail MMD')
 parser.add_argument('--group_alignment_mode', type=str, default='both', choices=['both', 'popular_only', 'tail_only'], help='Which popularity group is used for shared alignment')
-parser.add_argument('--tail_context_regulation', type=int, default=1, choices=[0, 1], help='Enable rule-based context dropout for Popular-context + Unpopular-next samples')
-parser.add_argument('--tail_aug_probability', type=float, default=0.5, help='Probability of applying context dropout to an eligible sample')
-parser.add_argument('--tail_drop_probability', type=float, default=0.2, help='Probability of dropping each older interaction')
 parser.add_argument('--tail_preserve_recent', type=int, default=2, help='Number of recent interactions always preserved')
-parser.add_argument('--e_context_state', type=str, default='legacy', choices=['legacy', 'low', 'medium', 'high'], help=('Experiment E target context state: ''low: ratio < 0.5, ''medium: 0.5 <= ratio < 0.75, ''high: ratio >= 0.75'))
 parser.add_argument('--e_context_low_threshold', type=float, default=0.5, help='Boundary between Low and Medium context state')
 parser.add_argument('--e_context_high_threshold', type=float, default=0.75, help='Boundary between Medium and High context state')
-parser.add_argument('--experiment_f', type=int, default=0, choices=[0, 1], help='Enable Experiment F meta-objective validation')
-parser.add_argument('--f_meta_ratio', type=float, default=0.1, help='Ratio of Target training data held out as Meta Pool')
-parser.add_argument('--f_meta_batch_size', type=int, default=64, help='Balanced Popular/Tail meta batch size')
-parser.add_argument('--f_margin_beta', type=float, default=0.25, help='Weight of Tail margin term in M1')
-parser.add_argument('--f_popmass_gamma', type=float, default=0.25, help='Weight of Popular probability mass term in M2')
-parser.add_argument('--f_run_probe', type=int, default=0, choices=[0, 1], help='Run Experiment F-E offline D2 reward probe')
-parser.add_argument('--f_probe_samples', type=int, default=32, help='Number of probe samples for each Low/Medium/High state')
-parser.add_argument('--f_probe_repeats', type=int, default=3, help='Repeated D2 masking trials for each sample and strength')
-parser.add_argument( '--f_probe_space', type=str, default='representation', choices=['output', 'representation', 'combined'],help=( 'Gradient parameter space for Experiment F-E: ' 'output=target embedding only, ' 'representation=sequence representation layers, ' 'combined=both'))
-parser.add_argument('--f_reward_mode', type=str, default='virtual', choices=['gradient','virtual','batch_virtual'], help=('gradient = V3 gradient alignment, ''virtual = V4 single-sample virtual update, ''batch_virtual = V5 training-aligned batch update'))
-parser.add_argument('--f_virtual_lr', type=float, default=0.001, help='Virtual one-step learning rate for Experiment F-E v4')
-parser.add_argument('--f_v5_batch_size', type=int, default=512, help='Virtual training batch size for V5')
-parser.add_argument('--f_v5_repeats', type=int, default=5, help='Number of paired mixed-batch repetitions')
-parser.add_argument('--f_v5_lr', type=float, default=0.001, help='Adam learning rate for V5 virtual batch update')
-parser.add_argument('--f_v5_aug_probability', type=float, default=0.5, help='D2 participation probability; 0.5 matches Experiment E')
+parser.add_argument('--agent_enabled', type=int, default=0, choices=[0, 1], help='Enable Agent V1 in Stage-2 training')
+parser.add_argument('--agent_hidden_dim', type=int, default=32, help='Policy MLP hidden dimension')
+parser.add_argument('--agent_lr', type=float, default=0.001, help='Policy optimizer learning rate')
+parser.add_argument('--agent_tail_margin_lambda', type=float, default=0.25, help='Tail-margin gain weight in reward')
+parser.add_argument('--agent_entropy_beta', type=float, default=0.01, help='Policy entropy regularization')
+parser.add_argument('--agent_baseline_momentum', type=float, default=0.9, help='EMA reward baseline momentum')
+parser.add_argument('--agent_warmup_epochs', type=int, default=1, help='Stage-2 epochs before policy updates')
+parser.add_argument('--agent_reward_clip', type=float, default=5.0, help='Absolute reward clipping threshold')
+parser.add_argument('--agent_log_interval', type=int, default=20, help='Log policy statistics every N batches')
 parser.add_argument('--optimizer', type=str, default='Adam', choices=['SGD', 'Adam'])
 parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
 parser.add_argument('--loss_lambda', type=float, default=1, help='loss weight for diffusion')
@@ -128,118 +117,6 @@ def main(args):
     t_val_data = pd.read_pickle(t_val_path)
     t_test_data = pd.read_pickle(t_test_path)
 
-    # ============================================================
-    # Experiment E：State Distribution Inspection
-    #
-    # Controlled condition:
-    # Next = Unpopular
-    # State:
-    # Sequence Popular Ratio
-    #
-    # 只做 distribution inspection，不進入 training
-    # ============================================================
-
-    if args.inspect_e_distribution == 1:
-
-        analyze_e_sequence_popularity_distribution(
-            train_data=t_tra_data,
-            popular_ratio=args.popular_ratio,
-            logger=logger
-        )
-
-        print(
-            "Experiment E distribution inspection finished. "
-            "Training is skipped."
-        )
-
-        return
-
-    # ============================================================
-    # Experiment F：Target Inner-Train / Meta Pool
-    # ============================================================
-
-    t_full_train_data = (
-        t_tra_data.copy()
-    )
-
-    if args.experiment_f == 1:
-
-        (
-            t_inner_data,
-            t_meta_data,
-            f_popular_items,
-            f_unpopular_items
-        ) = split_target_train_meta_data(
-            train_data=
-                t_full_train_data,
-
-            popular_ratio=
-                args.popular_ratio,
-
-            meta_ratio=
-                args.f_meta_ratio,
-
-            random_seed=
-                args.random_seed
-        )
-
-        f_split_info = {
-            'Experiment':
-                'F',
-
-            'Original Target Train':
-                len(
-                    t_full_train_data
-                ),
-
-            'Inner Train':
-                len(
-                    t_inner_data
-                ),
-
-            'Meta Pool':
-                len(
-                    t_meta_data
-                ),
-
-            'Meta Ratio':
-                args.f_meta_ratio,
-
-            'Popular Items':
-                len(
-                    f_popular_items
-                ),
-
-            'Tail Items':
-                len(
-                    f_unpopular_items
-                )
-        }
-
-        print(
-            'Experiment F Data Split'
-            '---------------------------------------------'
-        )
-
-        print(
-            f_split_info
-        )
-
-        logger.info(
-            'Experiment F Data Split'
-        )
-
-        logger.info(
-            f_split_info
-        )
-
-    else:
-
-        t_inner_data = (
-            t_tra_data
-        )
-
-        t_meta_data = None
     source_item_num = 98507
     target_item_num = 23978
 
@@ -290,203 +167,19 @@ def main(args):
     rec_diffu_joint_model = Att_Diffuse_model(diffu_rec, args)
     
     pretrain_flag = True
-    best_model, test_results = model_train(
-        s_tra_data,
-        s_val_data,
-        s_test_data,
-
-        # F 模式只讓 Inner Target
-        # 參與 Stage-1 alignment
-        t_inner_data,
-
-        rec_diffu_joint_model,
-        args,
-        logger,
-        pretrain_flag,
-
-        popularity_reference_data=
-            t_full_train_data
-    )
+    best_model, test_results = model_train(s_tra_data, s_val_data, s_test_data, t_tra_data, rec_diffu_joint_model, args, logger, pretrain_flag)
     rec_diffu_joint_model.load_state_dict(torch.load("./saved_model/"+args.s_dataset + "_" + args.t_dataset+"/model.pth"))
     args.item_num = target_item_num
     args.eval_interval = 1
     args.patience = 5
     pretrain_flag = False
-    # ============================================================
-    # Experiment F Reference Model
-    #
-    # D3 保留
-    # D1 不存在於此 branch
-    # D2 關閉
-    # ============================================================
-
-    original_tail_context_regulation = (
-        args.tail_context_regulation
-    )
-
-    if args.experiment_f == 1:
-
-        args.tail_context_regulation = 0
-
-        print(
-            'Experiment F Reference Model: '
-            'D2 disabled, D3 kept ON.'
-        )
-
-        logger.info(
-            'Experiment F Reference Model: '
-            'D2 disabled, D3 kept ON.'
-        )
-    best_model, test_results = model_train(
-        t_inner_data,
-        t_val_data,
-        t_test_data,
-        None,
-        rec_diffu_joint_model,
-        args,
-        logger,
-        pretrain_flag,
-
-        popularity_reference_data=
-            t_full_train_data
-    )
-    # ============================================================
-    # Experiment F：Meta Objective Sanity Check
-    # ============================================================
-
-    if args.experiment_f == 1:
-
-        f_meta_results = (
-            run_experiment_f_meta_check(
-                model_joint=
-                    best_model,
-
-                meta_data=
-                    t_meta_data,
-
-                popularity_reference_data=
-                    t_full_train_data,
-
-                args=args,
-
-                logger=logger
-            )
-        )
-
-        # ============================================================
-    # Experiment F-E：Offline Reward Validation
-    # ============================================================
-
-    if (
-        args.experiment_f == 1
-        and args.f_run_probe == 1
-    ):
-
-        if args.f_reward_mode == 'batch_virtual':
-
-            (
-                f_e_summary,
-                f_e_paired_summary
-            ) = (
-                run_experiment_f_e_v5_batch_probe(
-                    model_joint=
-                        best_model,
-
-                    inner_train_data=
-                        t_inner_data,
-
-                    meta_data=
-                        t_meta_data,
-
-                    popularity_reference_data=
-                        t_full_train_data,
-
-                    args=args,
-
-                    logger=logger
-                )
-            )
-
-        elif args.f_reward_mode == 'virtual':
-
-            (
-                f_e_summary,
-                f_e_paired_summary
-            ) = (
-                run_experiment_f_e_virtual_probe(
-                    model_joint=
-                        best_model,
-
-                    inner_train_data=
-                        t_inner_data,
-
-                    meta_data=
-                        t_meta_data,
-
-                    popularity_reference_data=
-                        t_full_train_data,
-
-                    args=args,
-
-                    logger=logger
-                )
-            )
-
-        else:
-
-            f_e_summary = (
-                run_experiment_f_e_probe(
-                    model_joint=
-                        best_model,
-
-                    inner_train_data=
-                        t_inner_data,
-
-                    meta_data=
-                        t_meta_data,
-
-                    popularity_reference_data=
-                        t_full_train_data,
-
-                    args=args,
-
-                    logger=logger
-                )
-            )
-        print(
-            'Experiment F Meta Objective Check Finished'
-            '---------------------------------------------'
-        )
-
-        for (
-            objective_name,
-            result
-        ) in f_meta_results.items():
-
-            print(
-                objective_name,
-                result
-            )
-    if args.experiment_f == 1:
-
-        target_model_filename = (
-            "target_model_f_reference.pth"
-        )
-
-    else:
-
-        target_model_filename = (
-            "target_model.pth"
-        )
-
-
+    best_model, test_results = model_train(t_tra_data, t_val_data, t_test_data, None, rec_diffu_joint_model, args, logger, pretrain_flag)
     target_model_path = (
         "./saved_model/"
         + args.s_dataset
         + "_"
         + args.t_dataset
-        + "/"
-        + target_model_filename
+        + "/target_model.pth"
     )
 
     torch.save(best_model.state_dict(), target_model_path)
