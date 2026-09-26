@@ -1,0 +1,25 @@
+  experiment-1        [m c4bf7e4 [[34morigin/experiment-1[m] tail oversampling
+  experiment-2        [m de2ceb2 [[34morigin/experiment-2[m] augmentation
+  experiment-3        [m bf44796 [[34morigin/experiment-3[m] 1+2
+  experiment-A        [m 6e0b080 [[34morigin/experiment-A[m] raise unpopular-seen target
+  experiment-B        [m 2aef65e [[34morigin/experiment-B[m] change status 1
+  experiment-C        [m b48452d [[34morigin/experiment-C[m] Target Tail recommendation
+  experiment-I        [m 6c424c1 [[34morigin/experiment-I[m] Source Popular／Tail
+  experiment-II       [m b7fd64e [[34morigin/experiment-II[m] Source-seq
+  experiment-II-2     [m 7890670 [[34morigin/experiment-II-2[m] Fix
+  experiment-II-3     [m eec6ec6 [[34morigin/experiment-II-3[m] Sequence-level Weighted Sampling
+  experiment-II-4     [m 782aec1 [[34morigin/experiment-II-4[m] Position-aware Regulation
+  experiment-III      [m 60043c7 [[34morigin/experiment-III[m] Shared Alignment-Off
+  experiment-III-2    [m 673e8e4 [[34morigin/experiment-III-2[m] Alignment Strength Sweep
+  experiment-III-3    [m 7a52373 [[34morigin/experiment-III-3[m] Popularity-aware Target Condition Sampling
+  experiment-III-4    [m 35326f7 [[34morigin/experiment-III-4[m] mechanism explanation
+  experiment-IV       [m dbcb648 [[34morigin/experiment-IV[m] Target Next Frequency-aware Reweighting
+  experiment-V        [m cab2732 [[34morigin/experiment-V[m] Target Adaptive Popular Dropout
+  experiment-rule-D1  [m 2e53329 [[34morigin/experiment-rule-D1[m] Experiment A
+  experiment-rule-D2  [m 1eb840e [[34morigin/experiment-rule-D2[m] Experiment B-fix
+  experiment-rule-D3  [m 2666b20 [[34morigin/experiment-rule-D3[m] Experiment C
+  experiment-rule-D3-2[m 6bc0ddf [[34morigin/experiment-rule-D3-2[m] Hard Coordinated Combination
+  experiment-rule-D3-3[m 61d3985 [[34morigin/experiment-rule-D3-3[m] Soft Coordination
+* [32mexperiment-rule-D4  [m 2e53329 [[34morigin/experiment-rule-D4[m] Experiment A
+  main                [m a9fd3c6 [[34morigin/main[m] Bias Amplification Analysis
+  target-only-baseline[m 55b0236 [[34morigin/target-only-baseline[m] Target only

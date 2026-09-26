@@ -194,20 +194,11 @@ def analyze_e_sequence_popularity_distribution(
     ratio_counter = Counter()
     valid_length_counter = Counter()
 
-    unpopular_next_samples = 0
+    total_samples = 0
 
     for _, row in train_data.iterrows():
 
-        target_item = int(row['next'])
-
-        # ----------------------------------------------------
-        # Experiment E controlled condition:
-        # 只觀察 Next = Unpopular
-        # ----------------------------------------------------
-        if target_item not in unpopular_seen_items:
-            continue
-
-        unpopular_next_samples += 1
+        total_samples += 1
 
         seq = list(row['seq'])
 
@@ -260,7 +251,7 @@ def analyze_e_sequence_popularity_distribution(
     )
 
     lines.append(
-        f"Unpopular-Next samples: {unpopular_next_samples}"
+        f"Unpopular-Next samples: {total_samples}"
     )
 
     lines.append("")
@@ -277,8 +268,8 @@ def analyze_e_sequence_popularity_distribution(
         count = ratio_counter[ratio]
 
         percentage = (
-            count / unpopular_next_samples * 100
-            if unpopular_next_samples > 0
+            count / total_samples * 100
+            if total_samples > 0
             else 0.0
         )
 
@@ -305,8 +296,8 @@ def analyze_e_sequence_popularity_distribution(
         count = valid_length_counter[length]
 
         percentage = (
-            count / unpopular_next_samples * 100
-            if unpopular_next_samples > 0
+            count / total_samples * 100
+            if total_samples > 0
             else 0.0
         )
 
@@ -330,7 +321,7 @@ def analyze_e_sequence_popularity_distribution(
         'valid_length_distribution': dict(
             sorted(valid_length_counter.items())
         ),
-        'unpopular_next_samples': unpopular_next_samples,
+        'unpopular_next_samples': total_samples,
         'popular_items': len(popular_items),
         'unpopular_seen_items': len(unpopular_seen_items)
     }
@@ -355,19 +346,25 @@ def pad_or_truncate_sequence(seq, max_len):
         + real_items
     )
 
-def dropout_older_context(
+def dropout_popular_context(
     seq,
+    popular_items,
     max_len,
     drop_probability,
     preserve_recent,
     rng
 ):
     """
-    只對較早的歷史 context 做 dropout。
+    D2-v2: Popularity-aware Context Regulation
 
-    - 不修改 next
+    只對 Popular interaction 做 dropout。
+
+    - Tail interaction 一律保留
+    - 最近 preserve_recent 個 interaction 一律保留
+    - 不使用更早的額外 history
+    - 不修改 next item
     - 不改 interaction order
-    - 最近 preserve_recent 個 interaction 一定保留
+    - drop 後使用 padding 0 維持固定 max_len
     """
 
     if not 0.0 <= drop_probability <= 1.0:
@@ -375,9 +372,9 @@ def dropout_older_context(
             'tail_drop_probability must be between 0 and 1.'
         )
 
-    if preserve_recent < 1:
+    if preserve_recent < 0:
         raise ValueError(
-            'tail_preserve_recent must be at least 1.'
+            'tail_preserve_recent must be >= 0.'
         )
 
     real_items = [
@@ -386,27 +383,39 @@ def dropout_older_context(
         if int(item) != 0
     ]
 
-    # 沒有足夠的較早 context 可以刪
-    if len(real_items) <= preserve_recent:
+    if len(real_items) == 0:
         return pad_or_truncate_sequence(
             real_items,
             max_len
         )
 
-    older_items = (
-        real_items[:-preserve_recent]
-    )
+    # --------------------------------------------------
+    # 保留最近 preserve_recent 個 interaction
+    # --------------------------------------------------
+    if preserve_recent > 0:
+        older_items = real_items[:-preserve_recent]
+        recent_items = real_items[-preserve_recent:]
+    else:
+        older_items = real_items
+        recent_items = []
 
-    recent_items = (
-        real_items[-preserve_recent:]
-    )
+    # --------------------------------------------------
+    # D2-v2:
+    # Popular item 才有機會被 drop
+    # Tail item 一定保留
+    # --------------------------------------------------
+    kept_older_items = []
 
-    # 只 dropout 較早 interaction
-    kept_older_items = [
-        item
-        for item in older_items
-        if rng.random() >= drop_probability
-    ]
+    for item in older_items:
+
+        if item in popular_items:
+            # Popular interaction
+            # 以 drop_probability 機率刪除
+            if rng.random() < drop_probability:
+                continue
+
+        # Tail interaction，或沒有被 drop 的 Popular
+        kept_older_items.append(item)
 
     augmented_items = (
         kept_older_items
@@ -418,10 +427,9 @@ def dropout_older_context(
         max_len
     )
 
-def rule_based_tail_context_regulation(
+def rule_based_popularity_context_regulation(
     batch_df,
     popular_items,
-    unpopular_seen_items,
     context_state,
     low_threshold,
     high_threshold,
@@ -432,40 +440,40 @@ def rule_based_tail_context_regulation(
     random_seed
 ):
     """
-    Experiment E / D2:
-    State-dependent Sequence Regulation
-
-    Controlled samples:
-        Next = Unpopular
+    Experiment E / D2-v2
 
     State:
-        Low:
-            Sequence Popular Ratio < low_threshold
+        Sequence Popular Ratio
 
-        Medium:
-            low_threshold <= Sequence Popular Ratio < high_threshold
+    Decision 不使用 Ground-truth Next item。
 
-        High:
-            Sequence Popular Ratio >= high_threshold
+    Low:
+        ratio < low_threshold
+
+    Medium:
+        low_threshold <= ratio < high_threshold
+
+    High:
+        ratio >= high_threshold
+
+    Action:
+        Popularity-aware selective dropout
 
     Strength:
         drop_probability
-
-    Legacy:
-        Sequence Popular Ratio > low_threshold
-        保留原本 D2 行為。
     """
 
     if not 0.0 <= augmentation_probability <= 1.0:
         raise ValueError(
             'tail_aug_probability must be between 0 and 1.'
         )
+
     if not 0.0 <= low_threshold < high_threshold <= 1.0:
         raise ValueError(
             'Experiment E thresholds must satisfy '
             '0 <= low_threshold < high_threshold <= 1.'
         )
-    
+
     batch_df = (
         batch_df
         .copy()
@@ -476,37 +484,22 @@ def rule_based_tail_context_regulation(
         random_seed
     )
 
-    # -------------------------------
+    # ==================================================
     # Statistics
-    # -------------------------------
+    # ==================================================
 
-    unpopular_next_samples = 0
     eligible_samples = 0
     augmented_samples = 0
-
-    dropped_item_count = 0
+    dropped_popular_item_count = 0
 
     eligible_pop_ratio_sum = 0.0
 
     for row_index in batch_df.index:
 
-        target_item = int(
-            batch_df.at[
-                row_index,
-                'next'
-            ]
-        )
-
-        # ========================================
-        # S2: Next-item Popularity
-        #
-        # Popular Next -> Normal
-        # ========================================
-
-        if target_item not in unpopular_seen_items:
-            continue
-
-        unpopular_next_samples += 1
+        # --------------------------------------------------
+        # 注意：
+        # 這裡完全不讀 batch_df['next']
+        # --------------------------------------------------
 
         original_seq = list(
             batch_df.at[
@@ -515,9 +508,9 @@ def rule_based_tail_context_regulation(
             ]
         )
 
-        # ========================================
-        # S1: Sequence Popularity
-        # ========================================
+        # ==================================================
+        # State = Sequence Popularity
+        # ==================================================
 
         seq_pop_ratio = (
             calculate_sequence_popular_ratio(
@@ -526,9 +519,9 @@ def rule_based_tail_context_regulation(
             )
         )
 
-        # ========================================
-        # Experiment E：State Selection
-        # ========================================
+        # ==================================================
+        # Experiment E State Selection
+        # ==================================================
 
         if context_state == 'low':
 
@@ -552,8 +545,8 @@ def rule_based_tail_context_regulation(
 
         elif context_state == 'legacy':
 
-            # 原本 D2：
-            # Popular-context + Unpopular Next
+            # 保留一個方便測試的設定
+            # Popular-heavy context
             state_match = (
                 seq_pop_ratio > low_threshold
             )
@@ -565,18 +558,16 @@ def rule_based_tail_context_regulation(
                 f'{context_state}'
             )
 
-
         if not state_match:
             continue
 
-
         eligible_samples += 1
+        eligible_pop_ratio_sum += seq_pop_ratio
 
-        eligible_pop_ratio_sum += (
-            seq_pop_ratio
-        )
+        # --------------------------------------------------
+        # 是否對此 eligible sample 套用 augmentation
+        # --------------------------------------------------
 
-        # 並非所有 eligible sample 都做 augmentation
         if rng.random() >= augmentation_probability:
             continue
 
@@ -585,9 +576,15 @@ def rule_based_tail_context_regulation(
             for item in original_seq
         )
 
+        # ==================================================
+        # D2-v2:
+        # Only Popular interactions can be dropped
+        # ==================================================
+
         augmented_seq = (
-            dropout_older_context(
+            dropout_popular_context(
                 seq=original_seq,
+                popular_items=popular_items,
                 max_len=max_len,
                 drop_probability=drop_probability,
                 preserve_recent=preserve_recent,
@@ -614,13 +611,19 @@ def rule_based_tail_context_regulation(
 
         augmented_samples += 1
 
-        dropped_item_count += max(
+        # 因為現在只有 Popular item 會被 drop
+        dropped_popular_item_count += max(
             0,
             original_real_length
             - augmented_real_length
         )
 
+    # ==================================================
+    # Statistics
+    # ==================================================
+
     stats = {
+
         'batch_size':
         len(batch_df),
 
@@ -636,10 +639,7 @@ def rule_based_tail_context_regulation(
         'drop_probability':
         drop_probability,
 
-        'unpopular_next_samples':
-        unpopular_next_samples,
-
-        'eligible_state_unpopnext':
+        'eligible_samples':
         eligible_samples,
 
         'augmented_samples':
@@ -666,8 +666,8 @@ def rule_based_tail_context_regulation(
             4
         ),
 
-        'dropped_items':
-        dropped_item_count
+        'dropped_popular_items':
+        dropped_popular_item_count
     }
 
     return (
@@ -879,7 +879,6 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
     # ============================================================
 
     d2_target_popular_items = None
-    d2_target_unpopular_items = None
 
     if (
         not pretrain_flag
@@ -888,7 +887,7 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
 
         (
             d2_target_popular_items,
-            d2_target_unpopular_items,
+            _,
             _,
             _
         ) = build_item_popularity_groups(
@@ -898,16 +897,19 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
 
         d2_setup = {
             'Experiment':
-            'E',
+            'E-v2',
 
             'Mechanism':
             'M2 Representation Dominance',
 
             'Action':
-            'D2 Sequence Regulation',
+            'D2 Popularity-aware Sequence Regulation',
+
+            'Decision_input':
+            'Sequence Popularity Only',
 
             'Next_condition':
-            'Unpopular Next',
+            'None',
 
             'Context_state':
             args.e_context_state,
@@ -934,21 +936,18 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
             'augmentation_probability':
             args.tail_aug_probability,
 
-            'drop_probability':
+            'popular_drop_probability':
             args.tail_drop_probability,
 
             'preserve_recent':
             args.tail_preserve_recent,
 
             'popular_items':
-            len(d2_target_popular_items),
-
-            'unpopular_seen_items':
-            len(d2_target_unpopular_items)
+            len(d2_target_popular_items)
         }
 
         print(
-            'D2 Tail-target Context Regulation'
+            'D2-v2 Popularity-aware Context Regulation'
             '---------------------------------------------'
         )
 
@@ -989,14 +988,12 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                 (
                     batch_df,
                     d2_batch_stats
-                ) = rule_based_tail_context_regulation(
+                ) = rule_based_popularity_context_regulation(
+
                     batch_df=batch_df,
 
                     popular_items=
                     d2_target_popular_items,
-
-                    unpopular_seen_items=
-                    d2_target_unpopular_items,
 
                     context_state=
                     args.e_context_state,

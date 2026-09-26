@@ -1,0 +1,220 @@
+2026/09/24 17:06:42 - __main__ - INFO - 98 - main - Namespace(batch_size=512, decay_step=100, description='Diffu_norm_score', device='cuda', diffusion_steps=32, dropout=0.1, e_context_high_threshold=0.75, e_context_low_threshold=0.5, e_context_state='legacy', emb_dropout=0.3, epochs=100, eval_interval=5, gamma=0.1, group_alignment=1, group_alignment_mode='both', group_context_threshold=0.5, group_pop_weight=1.0, group_tail_weight=1.0, hidden_act='gelu', hidden_size=128, inspect_e_distribution=0, lambda_uncertainty=0.001, log_file='log/', loss_lambda=1, lr=0.001, max_len=8, metric_ks=[5, 10, 20], momentum=None, noise_schedule='trunc_lin', num_blocks=4, num_gpu=1, optimizer='Adam', p=0.3, patience=2, popular_ratio=0.2, random_seed=1997, rescale_timesteps=True, s_dataset='movie', schedule_sampler_name='lossaware', t_dataset='video', tail_aug_probability=0.5, tail_context_regulation=0, tail_drop_probability=0.2, tail_preserve_recent=2, w=1.0, weight_decay=0)
+2026/09/24 17:06:45 - __main__ - INFO - 870 - trainer - Group-aware Alignment Definition------------------------------------
+2026/09/24 17:06:45 - __main__ - INFO - 874 - trainer - {'group_alignment': True, 'alignment_mode': 'both', 'context_threshold': 0.5, 'popular_weight': 1.0, 'tail_weight': 1.0, 'source_popular_items': 17856, 'target_popular_items': 4372}
+2026/09/24 17:06:45 - __main__ - INFO - 1154 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/24 17:06:45 - __main__ - INFO - 1159 - trainer - {'Epoch': 0, 'Source Popular-context': 407, 'Source Tail-context': 75, 'Target Popular-context': 379, 'Target Tail-context': 87}
+2026/09/24 17:06:50 - __main__ - INFO - 1170 - trainer - Epoch: 0
+2026/09/24 17:06:50 - __main__ - INFO - 1154 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/24 17:06:50 - __main__ - INFO - 1159 - trainer - {'Epoch': 1, 'Source Popular-context': 394, 'Source Tail-context': 77, 'Target Popular-context': 372, 'Target Tail-context': 83}
+2026/09/24 17:06:55 - __main__ - INFO - 1170 - trainer - Epoch: 1
+2026/09/24 17:06:55 - __main__ - INFO - 1154 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/24 17:06:55 - __main__ - INFO - 1159 - trainer - {'Epoch': 2, 'Source Popular-context': 393, 'Source Tail-context': 73, 'Target Popular-context': 387, 'Target Tail-context': 77}
+2026/09/24 17:07:00 - __main__ - INFO - 1170 - trainer - Epoch: 2
+2026/09/24 17:07:00 - __main__ - INFO - 1154 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/24 17:07:00 - __main__ - INFO - 1159 - trainer - {'Epoch': 3, 'Source Popular-context': 409, 'Source Tail-context': 56, 'Target Popular-context': 342, 'Target Tail-context': 98}
+2026/09/24 17:07:04 - __main__ - INFO - 1170 - trainer - Epoch: 3
+2026/09/24 17:07:04 - __main__ - INFO - 1154 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/24 17:07:04 - __main__ - INFO - 1159 - trainer - {'Epoch': 4, 'Source Popular-context': 418, 'Source Tail-context': 59, 'Target Popular-context': 370, 'Target Tail-context': 79}
+2026/09/24 17:07:09 - __main__ - INFO - 1170 - trainer - Epoch: 4
+2026/09/24 17:07:09 - __main__ - INFO - 1154 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/24 17:07:09 - __main__ - INFO - 1159 - trainer - {'Epoch': 5, 'Source Popular-context': 403, 'Source Tail-context': 59, 'Target Popular-context': 368, 'Target Tail-context': 85}
+2026/09/24 17:07:14 - __main__ - INFO - 1170 - trainer - Epoch: 5
+2026/09/24 17:07:14 - __main__ - INFO - 1175 - trainer - start predicting: 2026-09-24 17:07:14.139019
+2026/09/24 17:07:25 - __main__ - INFO - 1212 - trainer - {'Best_HR@5': 38.7793, 'Best_NDCG@5': 29.9369, 'Best_HR@10': 49.4824, 'Best_NDCG@10': 33.3818, 'Best_HR@20': 62.0313, 'Best_NDCG@20': 36.529}
+2026/09/24 17:07:25 - __main__ - INFO - 1213 - trainer - {'Best_epoch_HR@5': 5, 'Best_epoch_NDCG@5': 5, 'Best_epoch_HR@10': 5, 'Best_epoch_NDCG@10': 5, 'Best_epoch_HR@20': 5, 'Best_epoch_NDCG@20': 5}
+2026/09/24 17:07:25 - __main__ - INFO - 1154 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/24 17:07:25 - __main__ - INFO - 1159 - trainer - {'Epoch': 6, 'Source Popular-context': 423, 'Source Tail-context': 54, 'Target Popular-context': 362, 'Target Tail-context': 95}
+2026/09/24 17:07:30 - __main__ - INFO - 1170 - trainer - Epoch: 6
+2026/09/24 17:07:30 - __main__ - INFO - 1154 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/24 17:07:30 - __main__ - INFO - 1159 - trainer - {'Epoch': 7, 'Source Popular-context': 421, 'Source Tail-context': 63, 'Target Popular-context': 375, 'Target Tail-context': 85}
+2026/09/24 17:07:35 - __main__ - INFO - 1170 - trainer - Epoch: 7
+2026/09/24 17:07:35 - __main__ - INFO - 1154 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/24 17:07:35 - __main__ - INFO - 1159 - trainer - {'Epoch': 8, 'Source Popular-context': 421, 'Source Tail-context': 59, 'Target Popular-context': 368, 'Target Tail-context': 94}
+2026/09/24 17:07:39 - __main__ - INFO - 1170 - trainer - Epoch: 8
+2026/09/24 17:07:39 - __main__ - INFO - 1154 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/24 17:07:39 - __main__ - INFO - 1159 - trainer - {'Epoch': 9, 'Source Popular-context': 402, 'Source Tail-context': 78, 'Target Popular-context': 378, 'Target Tail-context': 85}
+2026/09/24 17:07:44 - __main__ - INFO - 1170 - trainer - Epoch: 9
+2026/09/24 17:07:44 - __main__ - INFO - 1154 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/24 17:07:44 - __main__ - INFO - 1159 - trainer - {'Epoch': 10, 'Source Popular-context': 428, 'Source Tail-context': 46, 'Target Popular-context': 374, 'Target Tail-context': 78}
+2026/09/24 17:07:49 - __main__ - INFO - 1170 - trainer - Epoch: 10
+2026/09/24 17:07:49 - __main__ - INFO - 1175 - trainer - start predicting: 2026-09-24 17:07:49.036522
+2026/09/24 17:08:00 - __main__ - INFO - 1212 - trainer - {'Best_HR@5': 48.418, 'Best_NDCG@5': 36.9735, 'Best_HR@10': 58.9648, 'Best_NDCG@10': 40.3781, 'Best_HR@20': 69.5898, 'Best_NDCG@20': 43.0669}
+2026/09/24 17:08:00 - __main__ - INFO - 1213 - trainer - {'Best_epoch_HR@5': 10, 'Best_epoch_NDCG@5': 10, 'Best_epoch_HR@10': 10, 'Best_epoch_NDCG@10': 10, 'Best_epoch_HR@20': 10, 'Best_epoch_NDCG@20': 10}
+2026/09/24 17:08:01 - __main__ - INFO - 1154 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/24 17:08:01 - __main__ - INFO - 1159 - trainer - {'Epoch': 11, 'Source Popular-context': 413, 'Source Tail-context': 60, 'Target Popular-context': 381, 'Target Tail-context': 85}
+2026/09/24 17:08:05 - __main__ - INFO - 1170 - trainer - Epoch: 11
+2026/09/24 17:08:05 - __main__ - INFO - 1154 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/24 17:08:05 - __main__ - INFO - 1159 - trainer - {'Epoch': 12, 'Source Popular-context': 424, 'Source Tail-context': 60, 'Target Popular-context': 372, 'Target Tail-context': 80}
+2026/09/24 17:08:10 - __main__ - INFO - 1170 - trainer - Epoch: 12
+2026/09/24 17:08:10 - __main__ - INFO - 1154 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/24 17:08:10 - __main__ - INFO - 1159 - trainer - {'Epoch': 13, 'Source Popular-context': 411, 'Source Tail-context': 73, 'Target Popular-context': 382, 'Target Tail-context': 79}
+2026/09/24 17:08:15 - __main__ - INFO - 1170 - trainer - Epoch: 13
+2026/09/24 17:08:15 - __main__ - INFO - 1154 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/24 17:08:15 - __main__ - INFO - 1159 - trainer - {'Epoch': 14, 'Source Popular-context': 423, 'Source Tail-context': 65, 'Target Popular-context': 379, 'Target Tail-context': 94}
+2026/09/24 17:08:19 - __main__ - INFO - 1170 - trainer - Epoch: 14
+2026/09/24 17:08:19 - __main__ - INFO - 1154 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/24 17:08:19 - __main__ - INFO - 1159 - trainer - {'Epoch': 15, 'Source Popular-context': 422, 'Source Tail-context': 58, 'Target Popular-context': 373, 'Target Tail-context': 98}
+2026/09/24 17:08:24 - __main__ - INFO - 1170 - trainer - Epoch: 15
+2026/09/24 17:08:24 - __main__ - INFO - 1175 - trainer - start predicting: 2026-09-24 17:08:24.406492
+2026/09/24 17:08:36 - __main__ - INFO - 1212 - trainer - {'Best_HR@5': 49.4531, 'Best_NDCG@5': 37.5251, 'Best_HR@10': 60.625, 'Best_NDCG@10': 41.1341, 'Best_HR@20': 70.5859, 'Best_NDCG@20': 43.6558}
+2026/09/24 17:08:36 - __main__ - INFO - 1213 - trainer - {'Best_epoch_HR@5': 15, 'Best_epoch_NDCG@5': 15, 'Best_epoch_HR@10': 15, 'Best_epoch_NDCG@10': 15, 'Best_epoch_HR@20': 15, 'Best_epoch_NDCG@20': 15}
+2026/09/24 17:08:36 - __main__ - INFO - 1154 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/24 17:08:36 - __main__ - INFO - 1159 - trainer - {'Epoch': 16, 'Source Popular-context': 403, 'Source Tail-context': 65, 'Target Popular-context': 374, 'Target Tail-context': 89}
+2026/09/24 17:08:41 - __main__ - INFO - 1170 - trainer - Epoch: 16
+2026/09/24 17:08:41 - __main__ - INFO - 1154 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/24 17:08:41 - __main__ - INFO - 1159 - trainer - {'Epoch': 17, 'Source Popular-context': 423, 'Source Tail-context': 52, 'Target Popular-context': 355, 'Target Tail-context': 109}
+2026/09/24 17:08:46 - __main__ - INFO - 1170 - trainer - Epoch: 17
+2026/09/24 17:08:46 - __main__ - INFO - 1154 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/24 17:08:46 - __main__ - INFO - 1159 - trainer - {'Epoch': 18, 'Source Popular-context': 413, 'Source Tail-context': 63, 'Target Popular-context': 386, 'Target Tail-context': 85}
+2026/09/24 17:08:51 - __main__ - INFO - 1170 - trainer - Epoch: 18
+2026/09/24 17:08:51 - __main__ - INFO - 1154 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/24 17:08:51 - __main__ - INFO - 1159 - trainer - {'Epoch': 19, 'Source Popular-context': 402, 'Source Tail-context': 63, 'Target Popular-context': 367, 'Target Tail-context': 94}
+2026/09/24 17:08:55 - __main__ - INFO - 1170 - trainer - Epoch: 19
+2026/09/24 17:08:55 - __main__ - INFO - 1154 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/24 17:08:55 - __main__ - INFO - 1159 - trainer - {'Epoch': 20, 'Source Popular-context': 409, 'Source Tail-context': 62, 'Target Popular-context': 373, 'Target Tail-context': 82}
+2026/09/24 17:09:00 - __main__ - INFO - 1170 - trainer - Epoch: 20
+2026/09/24 17:09:00 - __main__ - INFO - 1175 - trainer - start predicting: 2026-09-24 17:09:00.732519
+2026/09/24 17:09:12 - __main__ - INFO - 1154 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/24 17:09:12 - __main__ - INFO - 1159 - trainer - {'Epoch': 21, 'Source Popular-context': 404, 'Source Tail-context': 63, 'Target Popular-context': 372, 'Target Tail-context': 83}
+2026/09/24 17:09:17 - __main__ - INFO - 1170 - trainer - Epoch: 21
+2026/09/24 17:09:17 - __main__ - INFO - 1154 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/24 17:09:17 - __main__ - INFO - 1159 - trainer - {'Epoch': 22, 'Source Popular-context': 416, 'Source Tail-context': 59, 'Target Popular-context': 370, 'Target Tail-context': 78}
+2026/09/24 17:09:21 - __main__ - INFO - 1170 - trainer - Epoch: 22
+2026/09/24 17:09:21 - __main__ - INFO - 1154 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/24 17:09:21 - __main__ - INFO - 1159 - trainer - {'Epoch': 23, 'Source Popular-context': 404, 'Source Tail-context': 69, 'Target Popular-context': 385, 'Target Tail-context': 81}
+2026/09/24 17:09:26 - __main__ - INFO - 1170 - trainer - Epoch: 23
+2026/09/24 17:09:26 - __main__ - INFO - 1154 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/24 17:09:26 - __main__ - INFO - 1159 - trainer - {'Epoch': 24, 'Source Popular-context': 400, 'Source Tail-context': 74, 'Target Popular-context': 373, 'Target Tail-context': 90}
+2026/09/24 17:09:31 - __main__ - INFO - 1170 - trainer - Epoch: 24
+2026/09/24 17:09:31 - __main__ - INFO - 1154 - trainer - Group-aware Alignment Batch------------------------------------
+2026/09/24 17:09:31 - __main__ - INFO - 1159 - trainer - {'Epoch': 25, 'Source Popular-context': 415, 'Source Tail-context': 50, 'Target Popular-context': 382, 'Target Tail-context': 81}
+2026/09/24 17:09:35 - __main__ - INFO - 1170 - trainer - Epoch: 25
+2026/09/24 17:09:35 - __main__ - INFO - 1175 - trainer - start predicting: 2026-09-24 17:09:35.749176
+2026/09/24 17:09:48 - __main__ - INFO - 1222 - trainer - {'Best_HR@5': 49.4531, 'Best_NDCG@5': 37.5251, 'Best_HR@10': 60.625, 'Best_NDCG@10': 41.1341, 'Best_HR@20': 70.5859, 'Best_NDCG@20': 43.6558}
+2026/09/24 17:09:48 - __main__ - INFO - 1223 - trainer - {'Best_epoch_HR@5': 15, 'Best_epoch_NDCG@5': 15, 'Best_epoch_HR@10': 15, 'Best_epoch_NDCG@10': 15, 'Best_epoch_HR@20': 15, 'Best_epoch_NDCG@20': 15}
+2026/09/24 17:09:48 - __main__ - INFO - 1329 - trainer - Source Popularity Definition---------------------------------------------
+2026/09/24 17:09:48 - __main__ - INFO - 1334 - trainer - {'domain': 'Source', 'popular_ratio': 0.2, 'observed_train_items': 89276, 'popular_items': 17856, 'unpopular_seen_items': 71420, 'unseen_items_in_test': 'calculated from test ground truth'}
+2026/09/24 17:09:55 - __main__ - INFO - 1610 - trainer - %s Test Overall------------------------------------------------------
+2026/09/24 17:09:55 - __main__ - INFO - 1614 - trainer - {'HR@5': 49.9136, 'NDCG@5': 38.1646, 'HR@10': 60.4586, 'NDCG@10': 41.5905, 'HR@20': 70.3512, 'NDCG@20': 44.1024}
+2026/09/24 17:09:55 - __main__ - INFO - 1705 - trainer - Source Test Group Size----------------------------------------------
+2026/09/24 17:09:55 - __main__ - INFO - 1710 - trainer - {'domain': 'Source', 'Overall_test_samples': 10422, 'Popular_test_samples': 7854, 'Unpopular_seen_test_samples': 1824, 'Unseen_test_samples': 744, 'Grouped_test_samples': 10422}
+2026/09/24 17:09:55 - __main__ - INFO - 1712 - trainer - Source Test Popular Ground Truth-------------------------------------
+2026/09/24 17:09:55 - __main__ - INFO - 1717 - trainer - {'HR@5': 65.5844, 'NDCG@5': 50.3352, 'HR@10': 78.1767, 'NDCG@10': 54.4395, 'HR@20': 88.2353, 'NDCG@20': 57.0076}
+2026/09/24 17:09:55 - __main__ - INFO - 1719 - trainer - Source Test Unpopular-Seen Ground Truth------------------------------
+2026/09/24 17:09:55 - __main__ - INFO - 1724 - trainer - {'HR@5': 2.7961, 'NDCG@5': 1.326, 'HR@10': 8.8268, 'NDCG@10': 3.2279, 'HR@20': 22.0395, 'NDCG@20': 6.5224}
+2026/09/24 17:09:55 - __main__ - INFO - 1728 - trainer - Source Test Unseen Ground Truth--------------------------------------
+2026/09/24 17:09:55 - __main__ - INFO - 1733 - trainer - {'HR@5': 0.0, 'NDCG@5': 0.0, 'HR@10': 0.0, 'NDCG@10': 0.0, 'HR@20': 0.0, 'NDCG@20': 0.0}
+2026/09/24 17:09:55 - __main__ - INFO - 1735 - trainer - Source Recommendation Popularity-------------------------------------
+2026/09/24 17:09:55 - __main__ - INFO - 1740 - trainer - {'PopularRatio@5': 93.6461, 'PopularRatio@10': 82.2894, 'PopularRatio@20': 61.8269}
+2026/09/24 17:09:55 - __main__ - INFO - 1743 - trainer - Best Eval---------------------------------------------------------
+2026/09/24 17:09:55 - __main__ - INFO - 1746 - trainer - {'Best_HR@5': 49.4531, 'Best_NDCG@5': 37.5251, 'Best_HR@10': 60.625, 'Best_NDCG@10': 41.1341, 'Best_HR@20': 70.5859, 'Best_NDCG@20': 43.6558}
+2026/09/24 17:09:55 - __main__ - INFO - 1747 - trainer - {'Best_epoch_HR@5': 15, 'Best_epoch_NDCG@5': 15, 'Best_epoch_HR@10': 15, 'Best_epoch_NDCG@10': 15, 'Best_epoch_HR@20': 15, 'Best_epoch_NDCG@20': 15}
+2026/09/24 17:09:55 - __main__ - INFO - 1170 - trainer - Epoch: 0
+2026/09/24 17:09:56 - __main__ - INFO - 1170 - trainer - Epoch: 1
+2026/09/24 17:09:56 - __main__ - INFO - 1175 - trainer - start predicting: 2026-09-24 17:09:56.423010
+2026/09/24 17:09:58 - __main__ - INFO - 1212 - trainer - {'Best_HR@5': 7.0312, 'Best_NDCG@5': 3.919, 'Best_HR@10': 13.6719, 'Best_NDCG@10': 6.0242, 'Best_HR@20': 28.4668, 'Best_NDCG@20': 9.7211}
+2026/09/24 17:09:58 - __main__ - INFO - 1213 - trainer - {'Best_epoch_HR@5': 1, 'Best_epoch_NDCG@5': 1, 'Best_epoch_HR@10': 1, 'Best_epoch_NDCG@10': 1, 'Best_epoch_HR@20': 1, 'Best_epoch_NDCG@20': 1}
+2026/09/24 17:09:58 - __main__ - INFO - 1170 - trainer - Epoch: 2
+2026/09/24 17:09:58 - __main__ - INFO - 1175 - trainer - start predicting: 2026-09-24 17:09:58.579803
+2026/09/24 17:10:00 - __main__ - INFO - 1212 - trainer - {'Best_HR@5': 11.9141, 'Best_NDCG@5': 7.3198, 'Best_HR@10': 21.875, 'Best_NDCG@10': 10.4878, 'Best_HR@20': 36.7188, 'Best_NDCG@20': 14.1986}
+2026/09/24 17:10:00 - __main__ - INFO - 1213 - trainer - {'Best_epoch_HR@5': 2, 'Best_epoch_NDCG@5': 2, 'Best_epoch_HR@10': 2, 'Best_epoch_NDCG@10': 2, 'Best_epoch_HR@20': 2, 'Best_epoch_NDCG@20': 2}
+2026/09/24 17:10:00 - __main__ - INFO - 1170 - trainer - Epoch: 3
+2026/09/24 17:10:00 - __main__ - INFO - 1175 - trainer - start predicting: 2026-09-24 17:10:00.748887
+2026/09/24 17:10:02 - __main__ - INFO - 1212 - trainer - {'Best_HR@5': 18.1641, 'Best_NDCG@5': 11.6909, 'Best_HR@10': 28.7598, 'Best_NDCG@10': 15.0721, 'Best_HR@20': 45.3125, 'Best_NDCG@20': 19.2447}
+2026/09/24 17:10:02 - __main__ - INFO - 1213 - trainer - {'Best_epoch_HR@5': 3, 'Best_epoch_NDCG@5': 3, 'Best_epoch_HR@10': 3, 'Best_epoch_NDCG@10': 3, 'Best_epoch_HR@20': 3, 'Best_epoch_NDCG@20': 3}
+2026/09/24 17:10:02 - __main__ - INFO - 1170 - trainer - Epoch: 4
+2026/09/24 17:10:02 - __main__ - INFO - 1175 - trainer - start predicting: 2026-09-24 17:10:02.867114
+2026/09/24 17:10:04 - __main__ - INFO - 1212 - trainer - {'Best_HR@5': 23.2422, 'Best_NDCG@5': 15.4991, 'Best_HR@10': 34.8633, 'Best_NDCG@10': 19.2383, 'Best_HR@20': 50.9277, 'Best_NDCG@20': 23.2861}
+2026/09/24 17:10:04 - __main__ - INFO - 1213 - trainer - {'Best_epoch_HR@5': 4, 'Best_epoch_NDCG@5': 4, 'Best_epoch_HR@10': 4, 'Best_epoch_NDCG@10': 4, 'Best_epoch_HR@20': 4, 'Best_epoch_NDCG@20': 4}
+2026/09/24 17:10:04 - __main__ - INFO - 1170 - trainer - Epoch: 5
+2026/09/24 17:10:04 - __main__ - INFO - 1175 - trainer - start predicting: 2026-09-24 17:10:04.985189
+2026/09/24 17:10:06 - __main__ - INFO - 1212 - trainer - {'Best_HR@5': 27.9297, 'Best_NDCG@5': 19.2682, 'Best_HR@10': 39.1602, 'Best_NDCG@10': 22.8662, 'Best_HR@20': 54.3457, 'Best_NDCG@20': 26.6805}
+2026/09/24 17:10:06 - __main__ - INFO - 1213 - trainer - {'Best_epoch_HR@5': 5, 'Best_epoch_NDCG@5': 5, 'Best_epoch_HR@10': 5, 'Best_epoch_NDCG@10': 5, 'Best_epoch_HR@20': 5, 'Best_epoch_NDCG@20': 5}
+2026/09/24 17:10:07 - __main__ - INFO - 1170 - trainer - Epoch: 6
+2026/09/24 17:10:07 - __main__ - INFO - 1175 - trainer - start predicting: 2026-09-24 17:10:07.092015
+2026/09/24 17:10:08 - __main__ - INFO - 1212 - trainer - {'Best_HR@5': 29.541, 'Best_NDCG@5': 21.2977, 'Best_HR@10': 41.5039, 'Best_NDCG@10': 25.1528, 'Best_HR@20': 56.6895, 'Best_NDCG@20': 28.96}
+2026/09/24 17:10:08 - __main__ - INFO - 1213 - trainer - {'Best_epoch_HR@5': 6, 'Best_epoch_NDCG@5': 6, 'Best_epoch_HR@10': 6, 'Best_epoch_NDCG@10': 6, 'Best_epoch_HR@20': 6, 'Best_epoch_NDCG@20': 6}
+2026/09/24 17:10:09 - __main__ - INFO - 1170 - trainer - Epoch: 7
+2026/09/24 17:10:09 - __main__ - INFO - 1175 - trainer - start predicting: 2026-09-24 17:10:09.287590
+2026/09/24 17:10:10 - __main__ - INFO - 1212 - trainer - {'Best_HR@5': 32.1777, 'Best_NDCG@5': 23.2618, 'Best_HR@10': 43.3594, 'Best_NDCG@10': 26.86, 'Best_HR@20': 57.0801, 'Best_NDCG@20': 30.2911}
+2026/09/24 17:10:10 - __main__ - INFO - 1213 - trainer - {'Best_epoch_HR@5': 7, 'Best_epoch_NDCG@5': 7, 'Best_epoch_HR@10': 7, 'Best_epoch_NDCG@10': 7, 'Best_epoch_HR@20': 7, 'Best_epoch_NDCG@20': 7}
+2026/09/24 17:10:11 - __main__ - INFO - 1170 - trainer - Epoch: 8
+2026/09/24 17:10:11 - __main__ - INFO - 1175 - trainer - start predicting: 2026-09-24 17:10:11.421656
+2026/09/24 17:10:13 - __main__ - INFO - 1212 - trainer - {'Best_HR@5': 33.9355, 'Best_NDCG@5': 25.2169, 'Best_HR@10': 44.7266, 'Best_NDCG@10': 28.7116, 'Best_HR@20': 58.4473, 'Best_NDCG@20': 32.1645}
+2026/09/24 17:10:13 - __main__ - INFO - 1213 - trainer - {'Best_epoch_HR@5': 8, 'Best_epoch_NDCG@5': 8, 'Best_epoch_HR@10': 8, 'Best_epoch_NDCG@10': 8, 'Best_epoch_HR@20': 8, 'Best_epoch_NDCG@20': 8}
+2026/09/24 17:10:13 - __main__ - INFO - 1170 - trainer - Epoch: 9
+2026/09/24 17:10:13 - __main__ - INFO - 1175 - trainer - start predicting: 2026-09-24 17:10:13.678411
+2026/09/24 17:10:15 - __main__ - INFO - 1212 - trainer - {'Best_HR@5': 35.5469, 'Best_NDCG@5': 26.2619, 'Best_HR@10': 45.4102, 'Best_NDCG@10': 29.4565, 'Best_HR@20': 58.7891, 'Best_NDCG@20': 32.8317}
+2026/09/24 17:10:15 - __main__ - INFO - 1213 - trainer - {'Best_epoch_HR@5': 9, 'Best_epoch_NDCG@5': 9, 'Best_epoch_HR@10': 9, 'Best_epoch_NDCG@10': 9, 'Best_epoch_HR@20': 9, 'Best_epoch_NDCG@20': 9}
+2026/09/24 17:10:15 - __main__ - INFO - 1170 - trainer - Epoch: 10
+2026/09/24 17:10:15 - __main__ - INFO - 1175 - trainer - start predicting: 2026-09-24 17:10:15.839423
+2026/09/24 17:10:17 - __main__ - INFO - 1212 - trainer - {'Best_HR@5': 35.9375, 'Best_NDCG@5': 26.6645, 'Best_HR@10': 47.4609, 'Best_NDCG@10': 30.3718, 'Best_HR@20': 59.4238, 'Best_NDCG@20': 33.3732}
+2026/09/24 17:10:17 - __main__ - INFO - 1213 - trainer - {'Best_epoch_HR@5': 10, 'Best_epoch_NDCG@5': 10, 'Best_epoch_HR@10': 10, 'Best_epoch_NDCG@10': 10, 'Best_epoch_HR@20': 10, 'Best_epoch_NDCG@20': 10}
+2026/09/24 17:10:18 - __main__ - INFO - 1170 - trainer - Epoch: 11
+2026/09/24 17:10:18 - __main__ - INFO - 1175 - trainer - start predicting: 2026-09-24 17:10:18.018089
+2026/09/24 17:10:19 - __main__ - INFO - 1212 - trainer - {'Best_HR@5': 36.8652, 'Best_NDCG@5': 27.3027, 'Best_HR@10': 47.8516, 'Best_NDCG@10': 30.8612, 'Best_HR@20': 60.1074, 'Best_NDCG@20': 33.9258}
+2026/09/24 17:10:19 - __main__ - INFO - 1213 - trainer - {'Best_epoch_HR@5': 11, 'Best_epoch_NDCG@5': 11, 'Best_epoch_HR@10': 11, 'Best_epoch_NDCG@10': 11, 'Best_epoch_HR@20': 11, 'Best_epoch_NDCG@20': 11}
+2026/09/24 17:10:20 - __main__ - INFO - 1170 - trainer - Epoch: 12
+2026/09/24 17:10:20 - __main__ - INFO - 1175 - trainer - start predicting: 2026-09-24 17:10:20.172248
+2026/09/24 17:10:21 - __main__ - INFO - 1212 - trainer - {'Best_HR@5': 37.1582, 'Best_NDCG@5': 27.4499, 'Best_HR@10': 47.998, 'Best_NDCG@10': 30.9563, 'Best_HR@20': 60.1074, 'Best_NDCG@20': 33.9258}
+2026/09/24 17:10:21 - __main__ - INFO - 1213 - trainer - {'Best_epoch_HR@5': 12, 'Best_epoch_NDCG@5': 12, 'Best_epoch_HR@10': 12, 'Best_epoch_NDCG@10': 12, 'Best_epoch_HR@20': 11, 'Best_epoch_NDCG@20': 11}
+2026/09/24 17:10:22 - __main__ - INFO - 1170 - trainer - Epoch: 13
+2026/09/24 17:10:22 - __main__ - INFO - 1175 - trainer - start predicting: 2026-09-24 17:10:22.314076
+2026/09/24 17:10:23 - __main__ - INFO - 1212 - trainer - {'Best_HR@5': 37.5488, 'Best_NDCG@5': 27.7102, 'Best_HR@10': 48.3887, 'Best_NDCG@10': 31.2065, 'Best_HR@20': 60.2051, 'Best_NDCG@20': 34.1928}
+2026/09/24 17:10:23 - __main__ - INFO - 1213 - trainer - {'Best_epoch_HR@5': 13, 'Best_epoch_NDCG@5': 13, 'Best_epoch_HR@10': 13, 'Best_epoch_NDCG@10': 13, 'Best_epoch_HR@20': 13, 'Best_epoch_NDCG@20': 13}
+2026/09/24 17:10:24 - __main__ - INFO - 1170 - trainer - Epoch: 14
+2026/09/24 17:10:24 - __main__ - INFO - 1175 - trainer - start predicting: 2026-09-24 17:10:24.415647
+2026/09/24 17:10:26 - __main__ - INFO - 1212 - trainer - {'Best_HR@5': 38.3301, 'Best_NDCG@5': 28.1379, 'Best_HR@10': 48.6816, 'Best_NDCG@10': 31.484, 'Best_HR@20': 60.5957, 'Best_NDCG@20': 34.4945}
+2026/09/24 17:10:26 - __main__ - INFO - 1213 - trainer - {'Best_epoch_HR@5': 14, 'Best_epoch_NDCG@5': 14, 'Best_epoch_HR@10': 14, 'Best_epoch_NDCG@10': 14, 'Best_epoch_HR@20': 14, 'Best_epoch_NDCG@20': 14}
+2026/09/24 17:10:26 - __main__ - INFO - 1170 - trainer - Epoch: 15
+2026/09/24 17:10:26 - __main__ - INFO - 1175 - trainer - start predicting: 2026-09-24 17:10:26.606023
+2026/09/24 17:10:28 - __main__ - INFO - 1212 - trainer - {'Best_HR@5': 38.3301, 'Best_NDCG@5': 28.431, 'Best_HR@10': 48.7305, 'Best_NDCG@10': 31.8279, 'Best_HR@20': 60.9863, 'Best_NDCG@20': 34.9163}
+2026/09/24 17:10:28 - __main__ - INFO - 1213 - trainer - {'Best_epoch_HR@5': 14, 'Best_epoch_NDCG@5': 15, 'Best_epoch_HR@10': 15, 'Best_epoch_NDCG@10': 15, 'Best_epoch_HR@20': 15, 'Best_epoch_NDCG@20': 15}
+2026/09/24 17:10:28 - __main__ - INFO - 1170 - trainer - Epoch: 16
+2026/09/24 17:10:28 - __main__ - INFO - 1175 - trainer - start predicting: 2026-09-24 17:10:28.920198
+2026/09/24 17:10:30 - __main__ - INFO - 1212 - trainer - {'Best_HR@5': 38.3789, 'Best_NDCG@5': 28.431, 'Best_HR@10': 49.2676, 'Best_NDCG@10': 31.8279, 'Best_HR@20': 61.5723, 'Best_NDCG@20': 34.9163}
+2026/09/24 17:10:30 - __main__ - INFO - 1213 - trainer - {'Best_epoch_HR@5': 16, 'Best_epoch_NDCG@5': 15, 'Best_epoch_HR@10': 16, 'Best_epoch_NDCG@10': 15, 'Best_epoch_HR@20': 16, 'Best_epoch_NDCG@20': 15}
+2026/09/24 17:10:31 - __main__ - INFO - 1170 - trainer - Epoch: 17
+2026/09/24 17:10:31 - __main__ - INFO - 1175 - trainer - start predicting: 2026-09-24 17:10:31.043416
+2026/09/24 17:10:32 - __main__ - INFO - 1212 - trainer - {'Best_HR@5': 38.3789, 'Best_NDCG@5': 28.431, 'Best_HR@10': 49.9023, 'Best_NDCG@10': 31.8857, 'Best_HR@20': 61.5723, 'Best_NDCG@20': 34.9163}
+2026/09/24 17:10:32 - __main__ - INFO - 1213 - trainer - {'Best_epoch_HR@5': 16, 'Best_epoch_NDCG@5': 15, 'Best_epoch_HR@10': 17, 'Best_epoch_NDCG@10': 17, 'Best_epoch_HR@20': 16, 'Best_epoch_NDCG@20': 15}
+2026/09/24 17:10:33 - __main__ - INFO - 1170 - trainer - Epoch: 18
+2026/09/24 17:10:33 - __main__ - INFO - 1175 - trainer - start predicting: 2026-09-24 17:10:33.226543
+2026/09/24 17:10:35 - __main__ - INFO - 1170 - trainer - Epoch: 19
+2026/09/24 17:10:35 - __main__ - INFO - 1175 - trainer - start predicting: 2026-09-24 17:10:35.377030
+2026/09/24 17:10:37 - __main__ - INFO - 1212 - trainer - {'Best_HR@5': 38.7207, 'Best_NDCG@5': 28.4918, 'Best_HR@10': 49.9023, 'Best_NDCG@10': 31.8857, 'Best_HR@20': 61.5723, 'Best_NDCG@20': 34.9163}
+2026/09/24 17:10:37 - __main__ - INFO - 1213 - trainer - {'Best_epoch_HR@5': 19, 'Best_epoch_NDCG@5': 19, 'Best_epoch_HR@10': 17, 'Best_epoch_NDCG@10': 17, 'Best_epoch_HR@20': 16, 'Best_epoch_NDCG@20': 15}
+2026/09/24 17:10:37 - __main__ - INFO - 1170 - trainer - Epoch: 20
+2026/09/24 17:10:37 - __main__ - INFO - 1175 - trainer - start predicting: 2026-09-24 17:10:37.659188
+2026/09/24 17:10:39 - __main__ - INFO - 1212 - trainer - {'Best_HR@5': 38.7207, 'Best_NDCG@5': 28.5592, 'Best_HR@10': 49.9023, 'Best_NDCG@10': 32.0778, 'Best_HR@20': 61.5723, 'Best_NDCG@20': 35.0035}
+2026/09/24 17:10:39 - __main__ - INFO - 1213 - trainer - {'Best_epoch_HR@5': 19, 'Best_epoch_NDCG@5': 20, 'Best_epoch_HR@10': 17, 'Best_epoch_NDCG@10': 20, 'Best_epoch_HR@20': 16, 'Best_epoch_NDCG@20': 20}
+2026/09/24 17:10:39 - __main__ - INFO - 1170 - trainer - Epoch: 21
+2026/09/24 17:10:39 - __main__ - INFO - 1175 - trainer - start predicting: 2026-09-24 17:10:39.738068
+2026/09/24 17:10:41 - __main__ - INFO - 1170 - trainer - Epoch: 22
+2026/09/24 17:10:41 - __main__ - INFO - 1175 - trainer - start predicting: 2026-09-24 17:10:41.865672
+2026/09/24 17:10:43 - __main__ - INFO - 1170 - trainer - Epoch: 23
+2026/09/24 17:10:43 - __main__ - INFO - 1175 - trainer - start predicting: 2026-09-24 17:10:43.958170
+2026/09/24 17:10:46 - __main__ - INFO - 1170 - trainer - Epoch: 24
+2026/09/24 17:10:46 - __main__ - INFO - 1175 - trainer - start predicting: 2026-09-24 17:10:46.064497
+2026/09/24 17:10:48 - __main__ - INFO - 1170 - trainer - Epoch: 25
+2026/09/24 17:10:48 - __main__ - INFO - 1175 - trainer - start predicting: 2026-09-24 17:10:48.195641
+2026/09/24 17:10:49 - __main__ - INFO - 1222 - trainer - {'Best_HR@5': 38.7207, 'Best_NDCG@5': 28.5592, 'Best_HR@10': 49.9023, 'Best_NDCG@10': 32.0778, 'Best_HR@20': 61.5723, 'Best_NDCG@20': 35.0035}
+2026/09/24 17:10:49 - __main__ - INFO - 1223 - trainer - {'Best_epoch_HR@5': 19, 'Best_epoch_NDCG@5': 20, 'Best_epoch_HR@10': 17, 'Best_epoch_NDCG@10': 20, 'Best_epoch_HR@20': 16, 'Best_epoch_NDCG@20': 20}
+2026/09/24 17:10:49 - __main__ - INFO - 1329 - trainer - Target Popularity Definition---------------------------------------------
+2026/09/24 17:10:49 - __main__ - INFO - 1334 - trainer - {'domain': 'Target', 'popular_ratio': 0.2, 'observed_train_items': 21856, 'popular_items': 4372, 'unpopular_seen_items': 17484, 'unseen_items_in_test': 'calculated from test ground truth'}
+2026/09/24 17:10:51 - __main__ - INFO - 1610 - trainer - %s Test Overall------------------------------------------------------
+2026/09/24 17:10:51 - __main__ - INFO - 1614 - trainer - {'HR@5': 38.7646, 'NDCG@5': 28.345, 'HR@10': 49.7082, 'NDCG@10': 31.8755, 'HR@20': 62.1595, 'NDCG@20': 35.0143}
+2026/09/24 17:10:51 - __main__ - INFO - 1705 - trainer - Target Test Group Size----------------------------------------------
+2026/09/24 17:10:51 - __main__ - INFO - 1710 - trainer - {'domain': 'Target', 'Overall_test_samples': 2056, 'Popular_test_samples': 1372, 'Unpopular_seen_test_samples': 505, 'Unseen_test_samples': 179, 'Grouped_test_samples': 2056}
+2026/09/24 17:10:51 - __main__ - INFO - 1712 - trainer - Target Test Popular Ground Truth-------------------------------------
+2026/09/24 17:10:51 - __main__ - INFO - 1717 - trainer - {'HR@5': 56.6327, 'NDCG@5': 41.8061, 'HR@10': 70.5539, 'NDCG@10': 46.3089, 'HR@20': 83.4548, 'NDCG@20': 49.5795}
+2026/09/24 17:10:51 - __main__ - INFO - 1719 - trainer - Target Test Unpopular-Seen Ground Truth------------------------------
+2026/09/24 17:10:51 - __main__ - INFO - 1724 - trainer - {'HR@5': 3.9604, 'NDCG@5': 1.8203, 'HR@10': 10.6931, 'NDCG@10': 3.9611, 'HR@20': 26.3366, 'NDCG@20': 7.8542}
+2026/09/24 17:10:51 - __main__ - INFO - 1728 - trainer - Target Test Unseen Ground Truth--------------------------------------
+2026/09/24 17:10:51 - __main__ - INFO - 1733 - trainer - {'HR@5': 0.0, 'NDCG@5': 0.0, 'HR@10': 0.0, 'NDCG@10': 0.0, 'HR@20': 0.0, 'NDCG@20': 0.0}
+2026/09/24 17:10:51 - __main__ - INFO - 1735 - trainer - Target Recommendation Popularity-------------------------------------
+2026/09/24 17:10:51 - __main__ - INFO - 1740 - trainer - {'PopularRatio@5': 88.0253, 'PopularRatio@10': 74.5379, 'PopularRatio@20': 56.8191}
+2026/09/24 17:10:51 - __main__ - INFO - 1743 - trainer - Best Eval---------------------------------------------------------
+2026/09/24 17:10:51 - __main__ - INFO - 1746 - trainer - {'Best_HR@5': 38.7207, 'Best_NDCG@5': 28.5592, 'Best_HR@10': 49.9023, 'Best_NDCG@10': 32.0778, 'Best_HR@20': 61.5723, 'Best_NDCG@20': 35.0035}
+2026/09/24 17:10:51 - __main__ - INFO - 1747 - trainer - {'Best_epoch_HR@5': 19, 'Best_epoch_NDCG@5': 20, 'Best_epoch_HR@10': 17, 'Best_epoch_NDCG@10': 20, 'Best_epoch_HR@20': 16, 'Best_epoch_NDCG@20': 20}
+2026/09/24 17:10:51 - __main__ - INFO - 209 - main - Target model saved at: ./saved_model/movie_video/target_model.pth
