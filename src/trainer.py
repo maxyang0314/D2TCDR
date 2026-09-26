@@ -427,6 +427,120 @@ def dropout_popular_context(
         max_len
     )
 
+def tail_aware_history_sampling(
+    seq,
+    popular_items,
+    max_len,
+    history_window,
+    tail_sampling_ratio,
+    rng
+):
+    """
+    D2-v3:
+    Tail-aware Historical Sampling
+
+    1. Expand candidate history
+    2. Prefer unpopular-seen interactions
+    3. Keep final sequence length = max_len
+    """
+
+    real_items = [
+        int(item)
+        for item in seq
+        if int(item) != 0
+    ]
+
+
+    # 沒有足夠 history
+    if len(real_items) <= max_len:
+        return pad_or_truncate_sequence(
+            real_items,
+            max_len
+        )
+
+
+    # 取更長 history
+    candidate_items = real_items[-history_window:]
+
+
+    tail_items = [
+        item
+        for item in candidate_items
+        if item not in popular_items
+    ]
+
+    popular_items_list = [
+        item
+        for item in candidate_items
+        if item in popular_items
+    ]
+
+
+    # 希望保留多少 Tail
+    target_tail_num = int(
+        max_len * tail_sampling_ratio
+    )
+
+
+    target_tail_num = min(
+        target_tail_num,
+        len(tail_items)
+    )
+
+
+    target_pop_num = max_len - target_tail_num
+
+
+    selected_tail = rng.sample(
+        tail_items,
+        target_tail_num
+    )
+
+
+    selected_pop = rng.sample(
+        popular_items_list,
+        min(
+            target_pop_num,
+            len(popular_items_list)
+        )
+    )
+
+
+    sampled = selected_tail + selected_pop
+
+
+    # 如果不足補回
+    if len(sampled) < max_len:
+
+        remaining = [
+            item
+            for item in candidate_items
+            if item not in sampled
+        ]
+
+        extra = rng.sample(
+            remaining,
+            min(
+                max_len-len(sampled),
+                len(remaining)
+            )
+        )
+
+        sampled += extra
+
+
+    # 恢復時間順序
+    sampled = sorted(
+        sampled,
+        key=lambda x: candidate_items.index(x)
+    )
+
+
+    return pad_or_truncate_sequence(
+        sampled,
+        max_len
+    )
+
 def rule_based_popularity_context_regulation(
     batch_df,
     popular_items,
@@ -435,8 +549,8 @@ def rule_based_popularity_context_regulation(
     high_threshold,
     max_len,
     augmentation_probability,
-    drop_probability,
-    preserve_recent,
+    history_window,
+    tail_sampling_ratio,
     random_seed
 ):
     """
@@ -581,15 +695,13 @@ def rule_based_popularity_context_regulation(
         # Only Popular interactions can be dropped
         # ==================================================
 
-        augmented_seq = (
-            dropout_popular_context(
-                seq=original_seq,
-                popular_items=popular_items,
-                max_len=max_len,
-                drop_probability=drop_probability,
-                preserve_recent=preserve_recent,
-                rng=rng
-            )
+        augmented_seq = tail_aware_history_sampling(
+            seq=original_seq,
+            popular_items=popular_items,
+            max_len=max_len,
+            history_window=history_window,
+            tail_sampling_ratio=tail_sampling_ratio,
+            rng=rng
         )
 
         augmented_real_length = sum(
@@ -635,9 +747,6 @@ def rule_based_popularity_context_regulation(
 
         'high_threshold':
         high_threshold,
-
-        'drop_probability':
-        drop_probability,
 
         'eligible_samples':
         eligible_samples,
@@ -897,13 +1006,13 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
 
         d2_setup = {
             'Experiment':
-            'E-v2',
+            'E-v3',
 
             'Mechanism':
-            'M2 Representation Dominance',
+            'M2 Tail Information Enrichment',
 
             'Action':
-            'D2 Popularity-aware Sequence Regulation',
+            'D2 Tail-aware Historical Sampling',
 
             'Decision_input':
             'Sequence Popularity Only',
@@ -1010,11 +1119,11 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                     augmentation_probability=
                     args.tail_aug_probability,
 
-                    drop_probability=
-                    args.tail_drop_probability,
+                    history_window=
+                    args.tail_history_window,
 
-                    preserve_recent=
-                    args.tail_preserve_recent,
+                    tail_sampling_ratio=
+                    args.tail_sampling_ratio,
 
                     random_seed=
                     augmentation_seed

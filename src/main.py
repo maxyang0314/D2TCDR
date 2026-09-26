@@ -44,6 +44,8 @@ parser.add_argument('--tail_context_regulation', type=int, default=1, choices=[0
 parser.add_argument('--tail_aug_probability', type=float, default=0.5, help='Probability of applying D2 to an eligible context sample')
 parser.add_argument('--tail_drop_probability', type=float, default=0.2, help='Probability of dropping each Popular interaction')
 parser.add_argument('--tail_preserve_recent', type=int, default=2, help='Number of most recent interactions always preserved')
+parser.add_argument('--tail_history_window', type=int, default=16, help='Candidate historical window for D2-v3 sampling')
+parser.add_argument('--tail_sampling_ratio', type=float, default=0.5, help='Desired Tail ratio in D2-v3 sampled sequence')
 parser.add_argument('--e_context_state', type=str, default='legacy', choices=['legacy', 'low', 'medium', 'high'], help=('Experiment E target context state: ''low: ratio < 0.5, ''medium: 0.5 <= ratio < 0.75, ''high: ratio >= 0.75'))
 parser.add_argument('--e_context_low_threshold', type=float, default=0.5, help='Boundary between Low and Medium context state')
 parser.add_argument('--e_context_high_threshold', type=float, default=0.75, help='Boundary between Medium and High context state')
