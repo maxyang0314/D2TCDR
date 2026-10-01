@@ -428,116 +428,129 @@ def dropout_popular_context(
     )
 
 def tail_aware_history_sampling(
-    seq,
+    history_seq,
     popular_items,
     max_len,
     history_window,
     tail_sampling_ratio,
     rng
 ):
-    """
-    D2-v3:
-    Tail-aware Historical Sampling
-
-    1. Expand candidate history
-    2. Prefer unpopular-seen interactions
-    3. Keep final sequence length = max_len
-    """
-
     real_items = [
         int(item)
-        for item in seq
+        for item in history_seq
         if int(item) != 0
     ]
 
+    candidate_items = real_items[-history_window:]
 
-    # 沒有足夠 history
-    if len(real_items) <= max_len:
+    if len(candidate_items) <= max_len:
         return pad_or_truncate_sequence(
-            real_items,
+            candidate_items,
             max_len
         )
 
+    candidates = list(enumerate(candidate_items))
 
-    # 取更長 history
-    candidate_items = real_items[-history_window:]
+    # 最近一個 interaction 保留
+    selected_positions = {
+        len(candidates) - 1
+    }
 
-
-    tail_items = [
-        item
-        for item in candidate_items
+    tail_positions = [
+        idx
+        for idx, item in candidates[:-1]
         if item not in popular_items
     ]
 
-    popular_items_list = [
-        item
-        for item in candidate_items
+    popular_positions = [
+        idx
+        for idx, item in candidates[:-1]
         if item in popular_items
     ]
 
-
-    # 希望保留多少 Tail
+    # 最終希望有多少 Tail
     target_tail_num = int(
         max_len * tail_sampling_ratio
     )
 
+    # 最近一個如果本身是 Tail
+    current_tail_num = 0
 
-    target_tail_num = min(
-        target_tail_num,
-        len(tail_items)
+    if candidate_items[-1] not in popular_items:
+        current_tail_num = 1
+
+    tail_needed = max(
+        0,
+        target_tail_num - current_tail_num
     )
 
-
-    target_pop_num = max_len - target_tail_num
-
-
+    # 抽 Tail
     selected_tail = rng.sample(
-        tail_items,
-        target_tail_num
-    )
-
-
-    selected_pop = rng.sample(
-        popular_items_list,
+        tail_positions,
         min(
-            target_pop_num,
-            len(popular_items_list)
+            tail_needed,
+            len(tail_positions)
         )
     )
 
+    selected_positions.update(
+        selected_tail
+    )
 
-    sampled = selected_tail + selected_pop
+    # 剩餘位置抽 Popular
+    remaining_slots = (
+        max_len - len(selected_positions)
+    )
 
+    selected_popular = rng.sample(
+        popular_positions,
+        min(
+            remaining_slots,
+            len(popular_positions)
+        )
+    )
 
-    # 如果不足補回
-    if len(sampled) < max_len:
+    selected_positions.update(
+        selected_popular
+    )
 
-        remaining = [
-            item
-            for item in candidate_items
-            if item not in sampled
+    # 如果還不足，從剩餘 interaction 補
+    remaining_slots = (
+        max_len - len(selected_positions)
+    )
+
+    if remaining_slots > 0:
+
+        remaining_positions = [
+            idx
+            for idx, _ in candidates
+            if idx not in selected_positions
         ]
 
-        extra = rng.sample(
-            remaining,
+        extra_positions = rng.sample(
+            remaining_positions,
             min(
-                max_len-len(sampled),
-                len(remaining)
+                remaining_slots,
+                len(remaining_positions)
             )
         )
 
-        sampled += extra
-
+        selected_positions.update(
+            extra_positions
+        )
 
     # 恢復時間順序
-    sampled = sorted(
-        sampled,
-        key=lambda x: candidate_items.index(x)
+    selected_positions = sorted(
+        selected_positions
     )
 
+    sampled_items = [
+        candidate_items[idx]
+        for idx in selected_positions
+    ]
 
     return pad_or_truncate_sequence(
-        sampled,
+        sampled_items,
         max_len
     )
 
@@ -604,9 +617,11 @@ def rule_based_popularity_context_regulation(
 
     eligible_samples = 0
     augmented_samples = 0
-    dropped_popular_item_count = 0
+    changed_samples = 0
 
     eligible_pop_ratio_sum = 0.0
+    original_tail_count = 0
+    augmented_tail_count = 0
 
     for row_index in batch_df.index:
 
@@ -622,6 +637,12 @@ def rule_based_popularity_context_regulation(
             ]
         )
 
+        history_seq = list(
+            batch_df.at[
+                row_index,
+                'history_seq'
+            ]
+        )
         # ==================================================
         # State = Sequence Popularity
         # ==================================================
@@ -678,6 +699,12 @@ def rule_based_popularity_context_regulation(
         eligible_samples += 1
         eligible_pop_ratio_sum += seq_pop_ratio
 
+        original_tail_count += sum(
+            1
+            for item in original_seq
+            if int(item) != 0
+            and int(item) not in popular_items
+        )
         # --------------------------------------------------
         # 是否對此 eligible sample 套用 augmentation
         # --------------------------------------------------
@@ -696,7 +723,7 @@ def rule_based_popularity_context_regulation(
         # ==================================================
 
         augmented_seq = tail_aware_history_sampling(
-            seq=original_seq,
+            history_seq=history_seq,
             popular_items=popular_items,
             max_len=max_len,
             history_window=history_window,
@@ -708,6 +735,16 @@ def rule_based_popularity_context_regulation(
             int(item) != 0
             for item in augmented_seq
         )
+
+        augmented_tail_count += sum(
+            1
+            for item in augmented_seq
+            if int(item) != 0
+            and int(item) not in popular_items
+        )
+
+        if augmented_seq != original_seq:
+            changed_samples += 1
 
         batch_df.at[
             row_index,
@@ -722,13 +759,6 @@ def rule_based_popularity_context_regulation(
             ] = augmented_real_length
 
         augmented_samples += 1
-
-        # 因為現在只有 Popular item 會被 drop
-        dropped_popular_item_count += max(
-            0,
-            original_real_length
-            - augmented_real_length
-        )
 
     # ==================================================
     # Statistics
@@ -775,8 +805,28 @@ def rule_based_popularity_context_regulation(
             4
         ),
 
-        'dropped_popular_items':
-        dropped_popular_item_count
+        'changed_samples':
+        changed_samples,
+
+        'avg_original_tail_ratio':
+        round(
+            original_tail_count
+            / max(eligible_samples * max_len, 1),
+            4
+        ),
+
+        'avg_augmented_tail_ratio':
+        round(
+            augmented_tail_count
+            / max(augmented_samples * max_len, 1),
+            4
+        ),
+
+        'history_window':
+        history_window,
+
+        'tail_sampling_ratio':
+        tail_sampling_ratio
     }
 
     return (
@@ -1045,11 +1095,11 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
             'augmentation_probability':
             args.tail_aug_probability,
 
-            'popular_drop_probability':
-            args.tail_drop_probability,
+            'history_window':
+            args.tail_history_window,
 
-            'preserve_recent':
-            args.tail_preserve_recent,
+            'tail_sampling_ratio':
+            args.tail_sampling_ratio,
 
             'popular_items':
             len(d2_target_popular_items)
