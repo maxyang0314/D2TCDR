@@ -6,6 +6,7 @@ import numpy as np
 import copy
 import time
 import random
+import pandas as pd
 
 from collections import Counter
 
@@ -243,11 +244,9 @@ def dropout_older_context(
         max_len
     )
 
-def rule_based_tail_context_regulation(
+def rule_based_tail_positive_augmentation(
     batch_df,
-    popular_items,
     unpopular_seen_items,
-    context_threshold,
     max_len,
     augmentation_probability,
     drop_probability,
@@ -255,20 +254,26 @@ def rule_based_tail_context_regulation(
     random_seed
 ):
     """
-    D2: Rule-based Tail-target Context Regulation
+    Model D: Tail Positive Sample Augmentation
 
-    State:
-        S1 = Sequence Popularity
-        S2 = Next-item Popularity
+    Goal:
+        Increase positive supervision / exposure for Unpopular-next items.
 
     Rule:
-        Next = Unpopular
-        AND
-        Sequence Popular Ratio > context_threshold
-            -> eligible for context dropout
+        Popular Next
+            -> keep original sample only
 
-        otherwise
-            -> keep original sequence
+        Unpopular Next
+            -> always keep original sample
+            -> with augmentation_probability,
+               generate one additional sequence with the SAME next item
+
+    Important:
+        - Original sample is never replaced
+        - Next item is unchanged
+        - Interaction order is unchanged
+        - Recent interactions are preserved
+        - Only a genuinely changed sequence is appended
     """
 
     if not 0.0 <= augmentation_probability <= 1.0:
@@ -276,7 +281,7 @@ def rule_based_tail_context_regulation(
             'tail_aug_probability must be between 0 and 1.'
         )
 
-    batch_df = (
+    original_batch_df = (
         batch_df
         .copy()
         .reset_index(drop=True)
@@ -286,80 +291,65 @@ def rule_based_tail_context_regulation(
         random_seed
     )
 
+    # 額外產生的 Tail-positive samples
+    augmented_rows = []
+
     # -------------------------------
     # Statistics
     # -------------------------------
+    original_batch_size = len(original_batch_df)
 
     unpopular_next_samples = 0
-    eligible_samples = 0
+    augmentation_attempts = 0
     augmented_samples = 0
-
+    unchanged_augmentations = 0
     dropped_item_count = 0
 
-    eligible_pop_ratio_sum = 0.0
-
-    for row_index in batch_df.index:
+    for row_index in original_batch_df.index:
 
         target_item = int(
-            batch_df.at[
+            original_batch_df.at[
                 row_index,
                 'next'
             ]
         )
 
         # ========================================
-        # S2: Next-item Popularity
-        #
-        # Popular Next -> Normal
+        # Popular Next -> original sample only
         # ========================================
-
         if target_item not in unpopular_seen_items:
             continue
 
         unpopular_next_samples += 1
 
+        # 並非所有 Tail sample 都額外 augmentation
+        if rng.random() >= augmentation_probability:
+            continue
+
+        augmentation_attempts += 1
+
         original_seq = list(
-            batch_df.at[
+            original_batch_df.at[
                 row_index,
                 'seq'
             ]
         )
 
-        # ========================================
-        # S1: Sequence Popularity
-        # ========================================
-
-        seq_pop_ratio = (
-            calculate_sequence_popular_ratio(
+        original_seq_padded = (
+            pad_or_truncate_sequence(
                 original_seq,
-                popular_items
+                max_len
             )
         )
 
-        # ========================================
-        # Rule:
-        #
-        # Unpopular Next
-        # + Popular-context
-        # ========================================
-
-        if seq_pop_ratio <= context_threshold:
-            continue
-
-        eligible_samples += 1
-        eligible_pop_ratio_sum += (
-            seq_pop_ratio
-        )
-
-        # 並非所有 eligible sample 都做 augmentation
-        if rng.random() >= augmentation_probability:
-            continue
-
         original_real_length = sum(
             int(item) != 0
-            for item in original_seq
+            for item in original_seq_padded
         )
 
+        # ========================================
+        # 產生另一個 historical context
+        # ========================================
         augmented_seq = (
             dropout_older_context(
                 seq=original_seq,
@@ -375,17 +365,30 @@ def rule_based_tail_context_regulation(
             for item in augmented_seq
         )
 
-        batch_df.at[
-            row_index,
-            'seq'
-        ] = augmented_seq
+        # ========================================
+        # 如果 sequence 完全沒變，不新增 duplicate
+        # ========================================
+        if augmented_seq == original_seq_padded:
+            unchanged_augmentations += 1
+            continue
 
-        if 'len_seq' in batch_df.columns:
+        # 複製完整原 row
+        new_row = (
+            original_batch_df
+            .loc[row_index]
+            .copy()
+        )
 
-            batch_df.at[
-                row_index,
-                'len_seq'
-            ] = augmented_real_length
+        # 只修改 sequence
+        new_row['seq'] = augmented_seq
+
+        if 'len_seq' in original_batch_df.columns:
+            new_row['len_seq'] = augmented_real_length
+
+        # next 完全沿用原 sample
+        augmented_rows.append(
+            new_row
+        )
 
         augmented_samples += 1
 
@@ -395,38 +398,57 @@ def rule_based_tail_context_regulation(
             - augmented_real_length
         )
 
+    # ========================================
+    # 原 batch + 額外 Tail-positive samples
+    # ========================================
+    if len(augmented_rows) > 0:
+
+        augmented_df = pd.DataFrame(
+            augmented_rows
+        )
+
+        batch_df = pd.concat(
+            [
+                original_batch_df,
+                augmented_df
+            ],
+            ignore_index=True
+        )
+
+    else:
+        batch_df = original_batch_df
+
     stats = {
 
-        'batch_size':
-            len(batch_df),
+        'original_batch_size':
+            original_batch_size,
 
         'unpopular_next_samples':
             unpopular_next_samples,
 
-        'eligible_popcontext_unpopnext':
-            eligible_samples,
+        'augmentation_attempts':
+            augmentation_attempts,
 
-        'augmented_samples':
+        'augmented_samples_added':
             augmented_samples,
 
-        'eligible_ratio':
-            round(
-                eligible_samples
-                / max(len(batch_df), 1),
-                4
-            ),
+        'unchanged_augmentations_skipped':
+            unchanged_augmentations,
 
-        'augmentation_ratio_among_eligible':
+        'final_batch_size':
+            len(batch_df),
+
+        'tail_sample_increase_ratio':
             round(
                 augmented_samples
-                / max(eligible_samples, 1),
+                / max(unpopular_next_samples, 1),
                 4
             ),
 
-        'avg_eligible_sequence_pop_ratio':
+        'overall_batch_increase_ratio':
             round(
-                eligible_pop_ratio_sum
-                / max(eligible_samples, 1),
+                augmented_samples
+                / max(original_batch_size, 1),
                 4
             ),
 
@@ -662,21 +684,19 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
 
         d2_setup = {
 
-            'D2':
-                'Tail-target Context Regulation',
+            'Model_D':
+                'Tail Positive Sample Augmentation',
 
-            'State_1':
-                'Sequence Popularity',
+            'Mechanism':
+                'Positive Supervision Imbalance',
 
-            'State_2':
-                'Next-item Popularity',
+            'Selection':
+                'Unpopular Next',
 
             'Rule':
                 (
-                    'Unpopular Next + '
-                    f'SeqPopRatio > '
-                    f'{args.group_context_threshold}'
-                    ' -> Context Dropout'
+                    'Keep Original Sample + '
+                    'Add Augmented Sample with Same Tail Target'
                 ),
 
             'augmentation_probability':
@@ -696,7 +716,7 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
         }
 
         print(
-            'D2 Tail-target Context Regulation'
+            'Model D Tail Positive Sample Augmentation'
             '---------------------------------------------'
         )
 
@@ -737,18 +757,12 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                 (
                     batch_df,
                     d2_batch_stats
-                ) = rule_based_tail_context_regulation(
+                ) = rule_based_tail_positive_augmentation(
 
                     batch_df=batch_df,
 
-                    popular_items=
-                        d2_target_popular_items,
-
                     unpopular_seen_items=
                         d2_target_unpopular_items,
-
-                    context_threshold=
-                        args.group_context_threshold,
 
                     max_len=
                         args.max_len,
