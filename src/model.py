@@ -60,6 +60,71 @@ class Att_Diffuse_model(nn.Module):
             scores = torch.matmul(rep_diffu, self.target_embeddings.weight.t())
         return self.loss_ce(scores, labels.squeeze(-1))
 
+    def loss_sampled_negative_ce(
+    self,
+    rep_diffu,
+    labels,
+    negative_items
+    ):
+        """
+        Model E sampled-negative ranking loss.
+
+        Candidate 0:
+            true next item
+
+        Candidate 1~K:
+            sampled negatives
+        """
+
+        target_ids = (
+            labels
+            .squeeze(-1)
+        )
+
+        positive_embeddings = (
+            self.target_embeddings(
+                target_ids
+            )
+        )
+
+        negative_embeddings = (
+            self.target_embeddings(
+                negative_items
+            )
+        )
+
+        positive_scores = (
+            rep_diffu
+            * positive_embeddings
+        ).sum(
+            dim=-1,
+            keepdim=True
+        )
+
+        negative_scores = torch.bmm(
+            negative_embeddings,
+            rep_diffu.unsqueeze(-1)
+        ).squeeze(-1)
+
+        candidate_scores = torch.cat(
+            [
+                positive_scores,
+                negative_scores
+            ],
+            dim=1
+        )
+
+        candidate_labels = torch.zeros(
+            candidate_scores.size(0),
+            dtype=torch.long,
+            device=candidate_scores.device
+        )
+
+        return self.loss_ce(
+            candidate_scores,
+            candidate_labels
+        )
+
     def diffu_rep_pre(self, rep_diffu, pretrain_flag):
         if pretrain_flag:
             scores = torch.matmul(rep_diffu, self.shared_layer(self.souce_embeddings.weight).t())
@@ -89,16 +154,6 @@ class Att_Diffuse_model(nn.Module):
         con_shared_embeddings,
         item_specific_embeddings,
         con_specific_embeddings,
-
-        source_pop_mask=None,
-        source_tail_mask=None,
-        target_pop_mask=None,
-        target_tail_mask=None,
-
-        group_alignment=False,
-        group_alignment_mode='both',
-        group_pop_weight=1.0,
-        group_tail_weight=1.0,
 
         lambda_shared=200.0,
         lambda_private=0.2,
@@ -130,160 +185,10 @@ class Att_Diffuse_model(nn.Module):
             + con_orthogonal_loss
         )
 
-        # ========================================================
-        # Experiment E：
-        # Group-aware Shared MMD
-        # ========================================================
-
-        if (
-            group_alignment
-            and source_pop_mask is not None
-            and source_tail_mask is not None
-            and target_pop_mask is not None
-            and target_tail_mask is not None
-        ):
-
-            weighted_loss = None
-            total_group_weight = 0.0
-
-            # ----------------------------------------------------
-            # Popular ↔ Popular
-            # ----------------------------------------------------
-
-            if (
-                group_alignment_mode in ['both', 'popular_only']
-                and group_pop_weight > 0
-                and source_pop_mask.any().item()
-                and target_pop_mask.any().item()
-            ):
-
-                popular_mmd = self.mmd_loss(
-                    item_shared_embeddings[
-                        source_pop_mask
-                    ],
-                    con_shared_embeddings[
-                        target_pop_mask
-                    ]
-                )
-
-                popular_term = (
-                    group_pop_weight
-                    * popular_mmd
-                )
-
-                weighted_loss = popular_term
-
-                total_group_weight += (
-                    group_pop_weight
-                )
-
-            # ----------------------------------------------------
-            # Tail ↔ Tail
-            # ----------------------------------------------------
-
-            if (
-                group_alignment_mode in ['both', 'tail_only']
-                and group_tail_weight > 0
-                and source_tail_mask.any().item()
-                and target_tail_mask.any().item()
-            ):
-
-                tail_mmd = self.mmd_loss(
-                    item_shared_embeddings[
-                        source_tail_mask
-                    ],
-                    con_shared_embeddings[
-                        target_tail_mask
-                    ]
-                )
-
-                tail_term = (
-                    group_tail_weight
-                    * tail_mmd
-                )
-
-                if weighted_loss is None:
-                    weighted_loss = tail_term
-                else:
-                    weighted_loss = (
-                        weighted_loss
-                        + tail_term
-                    )
-
-                total_group_weight += (
-                    group_tail_weight
-                )
-
-            # ----------------------------------------------------
-            # Normalized weighted average
-            # ----------------------------------------------------
-
-            if (
-                weighted_loss is not None
-                and total_group_weight > 0
-            ):
-
-                loss_mmd_shared = (
-                    weighted_loss
-                    / total_group_weight
-                )
-
-            else:
-
-                # 原本 Group-aware 維持舊設定
-                if group_alignment_mode == 'both':
-
-                    loss_mmd_shared = self.mmd_loss(
-                        item_shared_embeddings,
-                        con_shared_embeddings
-                    )
-
-                # Popular-only / Tail-only：
-                # 該 batch 沒有所指定的 group，就不做 shared alignment
-                else:
-
-                    loss_mmd_shared = (
-                        item_shared_embeddings.sum()
-                        * 0.0
-                    )
-
-        else:
-
-            # Original D2TCDR
-            loss_mmd_shared = self.mmd_loss(
-                item_shared_embeddings,
-                con_shared_embeddings
-            )
-
-        # ========================================================
-        # Private separation：
-        # 完全維持原始 D2TCDR
-        # ========================================================
-
-        loss_mmd_private = (
-            1
-            / self.mmd_loss(
-                item_specific_embeddings,
-                con_specific_embeddings
-            )
+        loss_mmd_shared = self.mmd_loss(
+            item_shared_embeddings,
+            con_shared_embeddings
         )
-
-        # ========================================================
-        # Total Alignment Loss
-        # ========================================================
-
-        total_loss = (
-            lambda_shared
-            * loss_mmd_shared
-
-            + lambda_private
-            * loss_mmd_private
-
-            + lambda_orthogonal
-            * orthogonal_loss
-        )
-
-        return total_loss
 
     def rbf_kernel(self, x, y, sigma=1.0, chunk_size=4096):
         device = x.device
@@ -321,7 +226,7 @@ class Att_Diffuse_model(nn.Module):
         mmd_loss = k_xx+ k_yy - 2 * k_xy
         return mmd_loss
 
-    def forward(self, sequence, tag, con_seq, pretrain_flag, args, epoch, train_flag=True, source_pop_mask=None, source_tail_mask=None, target_pop_mask=None, target_tail_mask=None): 
+    def forward(self, sequence, tag, con_seq, pretrain_flag, args, epoch, train_flag=True): 
         seq_length = sequence.size(1)
         position_ids = torch.arange(seq_length, dtype=torch.long, device=sequence.device)
         position_ids = position_ids.unsqueeze(0).expand_as(sequence)
@@ -345,10 +250,7 @@ class Att_Diffuse_model(nn.Module):
 
                 con_shared_embeddings = self.shared_layer(con_embeddings)
                 con_specific_embeddings = con_embeddings - con_shared_embeddings
-                em_loss = self.embedding_loss(item_shared_embeddings, con_shared_embeddings, item_specific_embeddings, con_specific_embeddings, source_pop_mask=source_pop_mask,
-                    source_tail_mask=source_tail_mask, target_pop_mask=target_pop_mask, target_tail_mask=target_tail_mask,
-                    group_alignment=(args.group_alignment == 1), group_alignment_mode=args.group_alignment_mode, group_pop_weight=args.group_pop_weight, group_tail_weight=args.group_tail_weight)
-        else:
+                em_loss = self.embedding_loss(item_shared_embeddings, con_shared_embeddings, item_specific_embeddings, con_specific_embeddings)
             item_embeddings = self.target_embeddings(sequence)
             item_embeddings = item_embeddings + position_embeddings
             if train_flag:

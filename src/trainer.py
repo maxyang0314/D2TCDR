@@ -585,6 +585,120 @@ def hrs_and_ndcgs_k(scores, labels, ks):
         metrics['NDCG@%d' % k] = ndcg_temp
     return metrics  
 
+def build_popularity_aware_negative_samples(
+    target_list,
+    popular_items,
+    unpopular_seen_items,
+    negative_sample_size,
+    tail_negative_weight,
+    rng
+):
+    """
+    Model E:
+    Popularity-aware Negative Sampling.
+
+    Popular negative:
+        sampling weight = 1.0
+
+    Tail negative:
+        sampling weight = tail_negative_weight
+    """
+
+    popular_pool = [
+        int(item)
+        for item in popular_items
+        if int(item) != 0
+    ]
+
+    tail_pool = [
+        int(item)
+        for item in unpopular_seen_items
+        if int(item) != 0
+    ]
+
+    if not 0.0 <= tail_negative_weight <= 1.0:
+        raise ValueError(
+            'tail_negative_weight must be between 0 and 1.'
+        )
+
+    popular_mass = len(popular_pool)
+
+    tail_mass = (
+        len(tail_pool)
+        * tail_negative_weight
+    )
+
+    total_mass = (
+        popular_mass
+        + tail_mass
+    )
+
+    popular_probability = (
+        popular_mass
+        / total_mass
+    )
+
+    num_popular = int(
+        round(
+            negative_sample_size
+            * popular_probability
+        )
+    )
+
+    num_tail = (
+        negative_sample_size
+        - num_popular
+    )
+
+    negative_batch = []
+
+    for target_item in target_list:
+
+        target_item = int(target_item)
+
+        current_popular_pool = [
+            item
+            for item in popular_pool
+            if item != target_item
+        ]
+
+        current_tail_pool = [
+            item
+            for item in tail_pool
+            if item != target_item
+        ]
+
+        popular_negatives = rng.sample(
+            current_popular_pool,
+            min(
+                num_popular,
+                len(current_popular_pool)
+            )
+        )
+
+        tail_negatives = rng.sample(
+            current_tail_pool,
+            min(
+                num_tail,
+                len(current_tail_pool)
+            )
+        )
+
+        negatives = (
+            popular_negatives
+            + tail_negatives
+        )
+
+        rng.shuffle(
+            negatives
+        )
+
+        negative_batch.append(
+            negatives
+        )
+
+    return negative_batch
+
 def model_train(train_data, val_data, test_data, con_data, model_joint, args, logger, pretrain_flag):
     epochs = args.epochs
     device = args.device
@@ -600,81 +714,23 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
     bad_count = 0
     num_rows=train_data.shape[0]
     num_batches=int(num_rows/args.batch_size)
-    # ============================================================
-    # Experiment E：Group-aware Alignment
-    # ============================================================
-
-    source_popular_items = None
-    target_popular_items = None
-
-    if (
-        pretrain_flag
-        and args.group_alignment == 1
-    ):
-
-        (
-            source_popular_items,
-            _,
-            _,
-            _
-        ) = build_item_popularity_groups(
-            train_data,
-            popular_ratio=args.popular_ratio
-        )
-
-        (
-            target_popular_items,
-            _,
-            _,
-            _
-        ) = build_item_popularity_groups(
-            con_data,
-            popular_ratio=args.popular_ratio
-        )
-
-        group_alignment_info = {
-            'group_alignment': True,
-            'alignment_mode': args.group_alignment_mode,
-            'context_threshold':
-                args.group_context_threshold,
-            'popular_weight':
-                args.group_pop_weight,
-            'tail_weight':
-                args.group_tail_weight,
-            'source_popular_items':
-                len(source_popular_items),
-            'target_popular_items':
-                len(target_popular_items)
-        }
-
-        print(
-            'Group-aware Alignment Definition'
-            '------------------------------------'
-        )
-        print(group_alignment_info)
-
-        logger.info(
-            'Group-aware Alignment Definition'
-            '------------------------------------'
-        )
-        logger.info(group_alignment_info)
 
     # ============================================================
-    # D2: Tail-target Context Regulation
+    # Model E: Popularity-aware Negative Sampling
     # Only used in Stage-2 Target training
     # ============================================================
 
-    d2_target_popular_items = None
-    d2_target_unpopular_items = None
+    negative_popular_items = None
+    negative_tail_items = None
 
     if (
         not pretrain_flag
-        and args.tail_context_regulation == 1
+        and args.negative_sampling == 1
     ):
 
         (
-            d2_target_popular_items,
-            d2_target_unpopular_items,
+            negative_popular_items,
+            negative_tail_items,
             _,
             _
         ) = build_item_popularity_groups(
@@ -682,52 +738,40 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
             popular_ratio=args.popular_ratio
         )
 
-        d2_setup = {
+        negative_setup = {
+            'Model_E':
+                'Popularity-aware Negative Sampling',
 
-            'Model_D':
-                'Tail Positive Sample Augmentation',
+            'negative_sample_size':
+                args.negative_sample_size,
 
-            'Mechanism':
-                'Positive Supervision Imbalance',
+            'popular_negative_weight':
+                1.0,
 
-            'Selection':
-                'Unpopular Next',
+            'tail_negative_weight':
+                args.tail_negative_weight,
 
-            'Rule':
-                (
-                    'Keep Original Sample + '
-                    'Add Augmented Sample with Same Tail Target'
-                ),
-
-            'augmentation_probability':
-                args.tail_aug_probability,
-
-            'drop_probability':
-                args.tail_drop_probability,
-
-            'preserve_recent':
-                args.tail_preserve_recent,
+            'negative_loss_lambda':
+                args.negative_loss_lambda,
 
             'popular_items':
-                len(d2_target_popular_items),
+                len(negative_popular_items),
 
-            'unpopular_seen_items':
-                len(d2_target_unpopular_items)
+            'tail_items':
+                len(negative_tail_items)
         }
 
         print(
-            'Model D Tail Positive Sample Augmentation'
+            'Model E Popularity-aware Negative Sampling'
             '---------------------------------------------'
         )
 
-        print(d2_setup)
-
-        logger.info(
-            'D2 Tail-target Context Regulation'
+        print(
+            negative_setup
         )
 
         logger.info(
-            d2_setup
+            negative_setup
         )
 
     for epoch_temp in range(epochs):
@@ -736,74 +780,6 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
         flag_update = 0
         for j in range(num_batches):
             batch_df = train_data.sample(n=args.batch_size).copy()
-            d2_batch_stats = None
-
-            # ========================================================
-            # D2 only applies to Stage-2 Target training
-            # ========================================================
-
-            if (
-                not pretrain_flag
-                and args.tail_context_regulation == 1
-            ):
-
-                augmentation_seed = (
-                    args.random_seed
-                    + epoch_temp * num_batches
-                    + j
-                    + 100000
-                )
-
-                (
-                    batch_df,
-                    d2_batch_stats
-                ) = rule_based_tail_positive_augmentation(
-
-                    batch_df=batch_df,
-
-                    unpopular_seen_items=
-                        d2_target_unpopular_items,
-
-                    max_len=
-                        args.max_len,
-
-                    augmentation_probability=
-                        args.tail_aug_probability,
-
-                    drop_probability=
-                        args.tail_drop_probability,
-
-                    preserve_recent=
-                        args.tail_preserve_recent,
-
-                    random_seed=
-                        augmentation_seed
-                )
-
-                # ========================================================
-                # D2 Batch Check
-                # 只顯示第一個 epoch 的前三個 batch
-                # ========================================================
-
-                if (
-                    not pretrain_flag
-                    and args.tail_context_regulation == 1
-                    and epoch_temp == 0
-                    and j < 3
-                ):
-
-                    print(
-                        'D2 Context Regulation Batch Check'
-                        '---------------------------------------------'
-                    )
-
-                    print(d2_batch_stats)
-
-                    logger.info(
-                        'D2 Context Regulation Batch Check'
-                    )
-
-                    logger.info(d2_batch_stats)
             seq_list = (
                 batch_df['seq'].tolist()
             )
@@ -814,6 +790,43 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
             optimizer.zero_grad()
             seq = torch.LongTensor(seq_list).to(device)
             target = (torch.LongTensor(target_list).unsqueeze(1).to(device))
+            negative_items = None
+
+            if (
+                not pretrain_flag
+                and args.negative_sampling == 1
+            ):
+
+                negative_seed = (
+                    args.random_seed
+                    + epoch_temp * num_batches
+                    + j
+                    + 200000
+                )
+
+                negative_rng = random.Random(
+                    negative_seed
+                )
+
+                negative_items = (
+                    build_popularity_aware_negative_samples(
+                        target_list=target_list,
+                        popular_items=
+                            negative_popular_items,
+                        unpopular_seen_items=
+                            negative_tail_items,
+                        negative_sample_size=
+                            args.negative_sample_size,
+                        tail_negative_weight=
+                            args.tail_negative_weight,
+                        rng=
+                            negative_rng
+                    )
+                )
+
+                negative_items = torch.LongTensor(
+                    negative_items
+                ).to(device)
 
             # ========================================================
             # Target condition：
@@ -825,104 +838,28 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                 con_batch_df = con_data.sample(n=args.batch_size)
                 con_seq_list = con_batch_df['seq'].tolist()
                 con_seq = torch.LongTensor(con_seq_list).to(device)
-
-                # ====================================================
-                # Experiment E：
-                # 建立 Source / Target Popular/Tail context masks
-                # ====================================================
-
-                if args.group_alignment == 1:
-
-                    (
-                        source_pop_mask,
-                        source_tail_mask,
-                        source_context_ratios
-                    ) = build_context_group_masks(
-                        seq_list,
-                        source_popular_items,
-                        args.group_context_threshold,
-                        device
-                    )
-
-                    (
-                        target_pop_mask,
-                        target_tail_mask,
-                        target_context_ratios
-                    ) = build_context_group_masks(
-                        con_seq_list,
-                        target_popular_items,
-                        args.group_context_threshold,
-                        device
-                    )
-                else:
-                    source_pop_mask = None
-                    source_tail_mask = None
-                    target_pop_mask = None
-                    target_tail_mask = None
+            
             else:
                 con_seq = None
-                source_pop_mask = None
-                source_tail_mask = None
-                target_pop_mask = None
-                target_tail_mask = None
-            if (
-                pretrain_flag
-                and args.group_alignment == 1
-                and j == 0
-            ):
-
-                group_batch_stats = {
-                    'Epoch':
-                        epoch_temp,
-
-                    'Source Popular-context':
-                        int(
-                            source_pop_mask
-                            .sum()
-                            .item()
-                        ),
-
-                    'Source Tail-context':
-                        int(
-                            source_tail_mask
-                            .sum()
-                            .item()
-                        ),
-
-                    'Target Popular-context':
-                        int(
-                            target_pop_mask
-                            .sum()
-                            .item()
-                        ),
-
-                    'Target Tail-context':
-                        int(
-                            target_tail_mask
-                            .sum()
-                            .item()
-                        )
-                }
-
-                print(
-                    'Group-aware Alignment Batch'
-                    '------------------------------------'
-                )
-
-                print(group_batch_stats)
-
-                logger.info(
-                    'Group-aware Alignment Batch'
-                    '------------------------------------'
-                )
-
-                logger.info(
-                    group_batch_stats
-                )
-            scores, diffu_rep, weights, t, item_rep_dis, seq_rep_dis, em_loss = model_joint(seq, target, con_seq, pretrain_flag, args, epoch_temp, train_flag=True,
-            source_pop_mask=source_pop_mask, source_tail_mask=source_tail_mask, target_pop_mask=target_pop_mask, target_tail_mask=target_tail_mask)  
+            scores, diffu_rep, weights, t, item_rep_dis, seq_rep_dis, em_loss = model_joint(seq, target, con_seq, pretrain_flag, args, epoch_temp, train_flag=True)  
             loss_diffu_value = model_joint.loss_diffu_ce(diffu_rep, target, pretrain_flag)  ## use this not above        
-            loss_all = loss_diffu_value + em_loss*args.loss_lambda
+            negative_loss = torch.tensor(0.0,device=device)
+            if (
+                not pretrain_flag
+                and args.negative_sampling == 1
+            ):
+                negative_loss = (
+                    model_joint.loss_sampled_negative_ce(
+                        diffu_rep,
+                        target,
+                        negative_items
+                    )
+                )
+            loss_all = (loss_diffu_value
+                + em_loss * args.loss_lambda
+                + args.negative_loss_lambda
+                * negative_loss
+            )
             loss_all.backward()
         
             optimizer.step()
