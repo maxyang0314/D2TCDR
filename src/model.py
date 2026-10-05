@@ -154,14 +154,13 @@ class Att_Diffuse_model(nn.Module):
         con_shared_embeddings,
         item_specific_embeddings,
         con_specific_embeddings,
-
         lambda_shared=200.0,
         lambda_private=0.2,
         lambda_orthogonal=20
     ):
 
         # ========================================================
-        # Original Orthogonal Loss
+        # 1. Orthogonal Loss
         # ========================================================
 
         item_orthogonal_loss = torch.mean(
@@ -185,10 +184,40 @@ class Att_Diffuse_model(nn.Module):
             + con_orthogonal_loss
         )
 
+        # ========================================================
+        # 2. Shared Representation Alignment
+        # Original D2TCDR MMD
+        # ========================================================
+
         loss_mmd_shared = self.mmd_loss(
             item_shared_embeddings,
             con_shared_embeddings
         )
+
+        # ========================================================
+        # 3. Private Representation Separation
+        # Original D2TCDR reverse MMD
+        # ========================================================
+
+        loss_mmd_private = (
+            1
+            / self.mmd_loss(
+                item_specific_embeddings,
+                con_specific_embeddings
+            )
+        )
+
+        # ========================================================
+        # 4. Total Embedding Loss
+        # ========================================================
+
+        total_loss = (
+            lambda_shared * loss_mmd_shared
+            + lambda_private * loss_mmd_private
+            + lambda_orthogonal * orthogonal_loss
+        )
+
+        return total_loss
 
     def rbf_kernel(self, x, y, sigma=1.0, chunk_size=4096):
         device = x.device
@@ -236,46 +265,126 @@ class Att_Diffuse_model(nn.Module):
         em_loss = 0
 
         if pretrain_flag:
+
+            # ========================================================
+            # Stage 1: Source-domain pretraining
+            # ========================================================
+
             item_embeddings = self.souce_embeddings(sequence)
             item_embeddings = item_embeddings + position_embeddings
-            item_shared_embeddings = self.shared_layer(item_embeddings)
-            item_specific_embeddings = item_embeddings - item_shared_embeddings
-            item_embeddings = item_shared_embeddings
-            
-            if train_flag:
-                
-               
-                con_embeddings= self.target_embeddings(con_seq)
-                con_embeddings = con_embeddings + position_embeddings
 
-                con_shared_embeddings = self.shared_layer(con_embeddings)
-                con_specific_embeddings = con_embeddings - con_shared_embeddings
-                em_loss = self.embedding_loss(item_shared_embeddings, con_shared_embeddings, item_specific_embeddings, con_specific_embeddings)
-            item_embeddings = self.target_embeddings(sequence)
-            item_embeddings = item_embeddings + position_embeddings
+            item_shared_embeddings = self.shared_layer(
+                item_embeddings
+            )
+
+            item_specific_embeddings = (
+                item_embeddings
+                - item_shared_embeddings
+            )
+
+            item_embeddings = item_shared_embeddings
+
+            # --------------------------------------------------------
+            # Cross-domain representation alignment
+            # --------------------------------------------------------
             if train_flag:
-                item_shared_embeddings = self.shared_layer(item_embeddings)
+
+                con_embeddings = self.target_embeddings(
+                    con_seq
+                )
+
+                con_embeddings = (
+                    con_embeddings
+                    + position_embeddings
+                )
+
+                con_shared_embeddings = self.shared_layer(
+                    con_embeddings
+                )
+
+                con_specific_embeddings = (
+                    con_embeddings
+                    - con_shared_embeddings
+                )
+
+                em_loss = self.embedding_loss(
+                    item_shared_embeddings,
+                    con_shared_embeddings,
+                    item_specific_embeddings,
+                    con_specific_embeddings
+                )
+
+        else:
+
+            # ========================================================
+            # Stage 2: Target-domain fine-tuning
+            # ========================================================
+
+            item_embeddings = self.target_embeddings(
+                sequence
+            )
+
+            item_embeddings = (
+                item_embeddings
+                + position_embeddings
+            )
+
+            if train_flag:
+
+                item_shared_embeddings = self.shared_layer(
+                    item_embeddings
+                )
+
                 num = random.random()
-                
+
                 if num < self.p:
                     item_embeddings = item_shared_embeddings
-            else:
-                item_shared_embeddings = self.shared_layer(item_embeddings)
-                item_shared_embeddings = self.embed_dropout(item_shared_embeddings)
-                item_shared_embeddings = self.LayerNorm(item_shared_embeddings)
-            
-        item_embeddings = self.embed_dropout(item_embeddings)  
 
-        item_embeddings = self.LayerNorm(item_embeddings)
-        
-        
-        if train_flag:
-            if pretrain_flag:
-                tag_emb = self.shared_layer(self.souce_embeddings(tag.squeeze(-1))) 
             else:
-                tag_emb = self.target_embeddings(tag.squeeze(-1))
- 
-            rep_diffu, rep_item, weights, t = self.diffu(item_embeddings, tag_emb, mask_seq)
+
+                item_shared_embeddings = self.shared_layer(
+                    item_embeddings
+                )
+
+                item_shared_embeddings = self.embed_dropout(
+                    item_shared_embeddings
+                )
+
+                item_shared_embeddings = self.LayerNorm(
+                    item_shared_embeddings
+                )
+
+
+        item_embeddings = self.embed_dropout(
+            item_embeddings
+        )
+
+        item_embeddings = self.LayerNorm(
+            item_embeddings
+        )
+
+
+        if train_flag:
+
+            if pretrain_flag:
+
+                tag_emb = self.shared_layer(
+                    self.souce_embeddings(
+                        tag.squeeze(-1)
+                    )
+                )
+
+            else:
+
+                tag_emb = self.target_embeddings(
+                    tag.squeeze(-1)
+                )
+
+            rep_diffu, rep_item, weights, t = self.diffu(
+                item_embeddings,
+                tag_emb,
+                mask_seq
+            )
 
             
             item_rep_dis = None
