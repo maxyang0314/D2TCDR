@@ -91,7 +91,8 @@ def sample_actions(
             tail_indices,
             sample_weights,
             None,
-            budget_carry
+            budget_carry,
+            tail_indices
         )
 
     tail_states = states[tail_indices]
@@ -200,5 +201,6 @@ def sample_actions(
         duplicate_idx,
         sample_weights,
         joint_log_prob,
-        next_carry
+        next_carry,
+        alpha_indices.detach()
     )

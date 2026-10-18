@@ -1,0 +1,123 @@
+2026/10/18 23:26:45 - __main__ - INFO - 105 - main - Namespace(agent_budget_ratio=0.2, agent_enabled=0, agent_hidden=32, agent_lr=0.0001, batch_size=512, decay_step=100, description='Diffu_norm_score', device='cuda', diffusion_steps=32, dropout=0.1, emb_dropout=0.3, epochs=100, eval_interval=5, gamma=0.1, hidden_act='gelu', hidden_size=128, lambda_uncertainty=0.001, log_file='log/', loss_lambda=1, lr=0.001, max_len=8, metric_ks=[5, 10, 20], momentum=None, noise_schedule='trunc_lin', num_blocks=4, num_gpu=1, optimizer='Adam', p=0.3, patience=2, popular_ratio=0.2, random_seed=1997, rescale_timesteps=True, reward_baseline_window=50, reward_epsilon_overall=0.002, reward_epsilon_popular=0.002, reward_eval_samples=1024, reward_holdout_ratio=0.1, reward_lambda_overall=1.0, reward_lambda_popular=1.0, reward_ref_overall=None, reward_ref_popular=None, s_dataset='movie', schedule_sampler_name='lossaware', skip_source_pretrain=False, t_dataset='video', w=1.0, weight_decay=0)
+2026/10/18 23:26:53 - __main__ - INFO - 651 - trainer - Epoch: 0
+2026/10/18 23:26:56 - __main__ - INFO - 651 - trainer - Epoch: 1
+2026/10/18 23:27:01 - __main__ - INFO - 651 - trainer - Epoch: 2
+2026/10/18 23:27:05 - __main__ - INFO - 651 - trainer - Epoch: 3
+2026/10/18 23:27:09 - __main__ - INFO - 651 - trainer - Epoch: 4
+2026/10/18 23:27:09 - __main__ - INFO - 659 - trainer - start predicting: 2026-10-18 23:27:09.119979
+2026/10/18 23:27:24 - __main__ - INFO - 651 - trainer - Epoch: 5
+2026/10/18 23:27:28 - __main__ - INFO - 651 - trainer - Epoch: 6
+2026/10/18 23:27:33 - __main__ - INFO - 651 - trainer - Epoch: 7
+2026/10/18 23:27:37 - __main__ - INFO - 651 - trainer - Epoch: 8
+2026/10/18 23:27:41 - __main__ - INFO - 651 - trainer - Epoch: 9
+2026/10/18 23:27:41 - __main__ - INFO - 659 - trainer - start predicting: 2026-10-18 23:27:41.094836
+2026/10/18 23:27:57 - __main__ - INFO - 651 - trainer - Epoch: 10
+2026/10/18 23:28:01 - __main__ - INFO - 651 - trainer - Epoch: 11
+2026/10/18 23:28:05 - __main__ - INFO - 651 - trainer - Epoch: 12
+2026/10/18 23:28:09 - __main__ - INFO - 651 - trainer - Epoch: 13
+2026/10/18 23:28:13 - __main__ - INFO - 651 - trainer - Epoch: 14
+2026/10/18 23:28:13 - __main__ - INFO - 659 - trainer - start predicting: 2026-10-18 23:28:13.108081
+2026/10/18 23:28:29 - __main__ - INFO - 651 - trainer - Epoch: 15
+2026/10/18 23:28:33 - __main__ - INFO - 651 - trainer - Epoch: 16
+2026/10/18 23:28:37 - __main__ - INFO - 651 - trainer - Epoch: 17
+2026/10/18 23:28:41 - __main__ - INFO - 651 - trainer - Epoch: 18
+2026/10/18 23:28:45 - __main__ - INFO - 651 - trainer - Epoch: 19
+2026/10/18 23:28:45 - __main__ - INFO - 659 - trainer - start predicting: 2026-10-18 23:28:45.015295
+2026/10/18 23:29:01 - __main__ - INFO - 651 - trainer - Epoch: 20
+2026/10/18 23:29:05 - __main__ - INFO - 651 - trainer - Epoch: 21
+2026/10/18 23:29:09 - __main__ - INFO - 651 - trainer - Epoch: 22
+2026/10/18 23:29:13 - __main__ - INFO - 651 - trainer - Epoch: 23
+2026/10/18 23:29:17 - __main__ - INFO - 651 - trainer - Epoch: 24
+2026/10/18 23:29:17 - __main__ - INFO - 659 - trainer - start predicting: 2026-10-18 23:29:17.668134
+2026/10/18 23:29:33 - __main__ - INFO - 651 - trainer - Epoch: 25
+2026/10/18 23:29:37 - __main__ - INFO - 651 - trainer - Epoch: 26
+2026/10/18 23:29:41 - __main__ - INFO - 651 - trainer - Epoch: 27
+2026/10/18 23:29:45 - __main__ - INFO - 651 - trainer - Epoch: 28
+2026/10/18 23:29:49 - __main__ - INFO - 651 - trainer - Epoch: 29
+2026/10/18 23:29:49 - __main__ - INFO - 659 - trainer - start predicting: 2026-10-18 23:29:49.294971
+2026/10/18 23:30:01 - __main__ - INFO - 753 - trainer - {'Best_HR@5': 49.7461, 'Best_NDCG@5': 37.6968, 'Best_HR@10': 60.957, 'Best_NDCG@10': 41.2818, 'Best_HR@20': 70.9277, 'Best_NDCG@20': 43.8255}
+2026/10/18 23:30:01 - __main__ - INFO - 754 - trainer - {'Best_epoch_HR@5': 14, 'Best_epoch_NDCG@5': 14, 'Best_epoch_HR@10': 19, 'Best_epoch_NDCG@10': 19, 'Best_epoch_HR@20': 14, 'Best_epoch_NDCG@20': 14}
+2026/10/18 23:30:01 - __main__ - INFO - 926 - trainer - Source Popularity Definition---------------------------------------------
+2026/10/18 23:30:01 - __main__ - INFO - 931 - trainer - {'domain': 'Source', 'popular_ratio': 0.2, 'observed_train_items': 89276, 'popular_items': 17856, 'unpopular_seen_items': 71420, 'unseen_items_in_test': 'calculated from test ground truth'}
+2026/10/18 23:30:08 - __main__ - INFO - 1207 - trainer - %s Test Overall------------------------------------------------------
+2026/10/18 23:30:08 - __main__ - INFO - 1211 - trainer - {'HR@5': 50.2879, 'NDCG@5': 38.4085, 'HR@10': 61.2934, 'NDCG@10': 41.9807, 'HR@20': 70.6007, 'NDCG@20': 44.3339}
+2026/10/18 23:30:08 - __main__ - INFO - 1302 - trainer - Source Test Group Size----------------------------------------------
+2026/10/18 23:30:08 - __main__ - INFO - 1307 - trainer - {'domain': 'Source', 'Overall_test_samples': 10422, 'Popular_test_samples': 7854, 'Unpopular_seen_test_samples': 1824, 'Unseen_test_samples': 744, 'Grouped_test_samples': 10422}
+2026/10/18 23:30:08 - __main__ - INFO - 1309 - trainer - Source Test Popular Ground Truth-------------------------------------
+2026/10/18 23:30:08 - __main__ - INFO - 1314 - trainer - {'HR@5': 66.081, 'NDCG@5': 50.6526, 'HR@10': 79.0807, 'NDCG@10': 54.8835, 'HR@20': 88.5027, 'NDCG@20': 57.2784}
+2026/10/18 23:30:08 - __main__ - INFO - 1316 - trainer - Source Test Unpopular-Seen Ground Truth------------------------------
+2026/10/18 23:30:08 - __main__ - INFO - 1321 - trainer - {'HR@5': 2.7961, 'NDCG@5': 1.353, 'HR@10': 9.7039, 'NDCG@10': 3.546, 'HR@20': 22.3136, 'NDCG@20': 6.6797}
+2026/10/18 23:30:08 - __main__ - INFO - 1325 - trainer - Source Test Unseen Ground Truth--------------------------------------
+2026/10/18 23:30:08 - __main__ - INFO - 1330 - trainer - {'HR@5': 0.0, 'NDCG@5': 0.0, 'HR@10': 0.0, 'NDCG@10': 0.0, 'HR@20': 0.0, 'NDCG@20': 0.0}
+2026/10/18 23:30:08 - __main__ - INFO - 1332 - trainer - Source Recommendation Popularity-------------------------------------
+2026/10/18 23:30:08 - __main__ - INFO - 1337 - trainer - {'PopularRatio@5': 93.6461, 'PopularRatio@10': 82.9284, 'PopularRatio@20': 61.9396}
+2026/10/18 23:30:08 - __main__ - INFO - 1340 - trainer - Best Eval---------------------------------------------------------
+2026/10/18 23:30:08 - __main__ - INFO - 1343 - trainer - {'Best_HR@5': 49.7461, 'Best_NDCG@5': 37.6968, 'Best_HR@10': 60.957, 'Best_NDCG@10': 41.2818, 'Best_HR@20': 70.9277, 'Best_NDCG@20': 43.8255}
+2026/10/18 23:30:08 - __main__ - INFO - 1344 - trainer - {'Best_epoch_HR@5': 14, 'Best_epoch_NDCG@5': 14, 'Best_epoch_HR@10': 19, 'Best_epoch_NDCG@10': 19, 'Best_epoch_HR@20': 14, 'Best_epoch_NDCG@20': 14}
+2026/10/18 23:30:09 - __main__ - INFO - 651 - trainer - Epoch: 0
+2026/10/18 23:30:09 - __main__ - INFO - 659 - trainer - start predicting: 2026-10-18 23:30:09.185007
+2026/10/18 23:30:11 - __main__ - INFO - 651 - trainer - Epoch: 1
+2026/10/18 23:30:11 - __main__ - INFO - 659 - trainer - start predicting: 2026-10-18 23:30:11.249422
+2026/10/18 23:30:13 - __main__ - INFO - 651 - trainer - Epoch: 2
+2026/10/18 23:30:13 - __main__ - INFO - 659 - trainer - start predicting: 2026-10-18 23:30:13.376295
+2026/10/18 23:30:15 - __main__ - INFO - 651 - trainer - Epoch: 3
+2026/10/18 23:30:15 - __main__ - INFO - 659 - trainer - start predicting: 2026-10-18 23:30:15.463887
+2026/10/18 23:30:17 - __main__ - INFO - 651 - trainer - Epoch: 4
+2026/10/18 23:30:17 - __main__ - INFO - 659 - trainer - start predicting: 2026-10-18 23:30:17.527594
+2026/10/18 23:30:19 - __main__ - INFO - 651 - trainer - Epoch: 5
+2026/10/18 23:30:19 - __main__ - INFO - 659 - trainer - start predicting: 2026-10-18 23:30:19.605860
+2026/10/18 23:30:21 - __main__ - INFO - 651 - trainer - Epoch: 6
+2026/10/18 23:30:21 - __main__ - INFO - 659 - trainer - start predicting: 2026-10-18 23:30:21.642224
+2026/10/18 23:30:23 - __main__ - INFO - 651 - trainer - Epoch: 7
+2026/10/18 23:30:23 - __main__ - INFO - 659 - trainer - start predicting: 2026-10-18 23:30:23.674098
+2026/10/18 23:30:25 - __main__ - INFO - 651 - trainer - Epoch: 8
+2026/10/18 23:30:25 - __main__ - INFO - 659 - trainer - start predicting: 2026-10-18 23:30:25.750868
+2026/10/18 23:30:27 - __main__ - INFO - 651 - trainer - Epoch: 9
+2026/10/18 23:30:27 - __main__ - INFO - 659 - trainer - start predicting: 2026-10-18 23:30:27.812978
+2026/10/18 23:30:29 - __main__ - INFO - 651 - trainer - Epoch: 10
+2026/10/18 23:30:29 - __main__ - INFO - 659 - trainer - start predicting: 2026-10-18 23:30:29.856050
+2026/10/18 23:30:31 - __main__ - INFO - 651 - trainer - Epoch: 11
+2026/10/18 23:30:31 - __main__ - INFO - 659 - trainer - start predicting: 2026-10-18 23:30:31.932472
+2026/10/18 23:30:34 - __main__ - INFO - 651 - trainer - Epoch: 12
+2026/10/18 23:30:34 - __main__ - INFO - 659 - trainer - start predicting: 2026-10-18 23:30:34.014358
+2026/10/18 23:30:36 - __main__ - INFO - 651 - trainer - Epoch: 13
+2026/10/18 23:30:36 - __main__ - INFO - 659 - trainer - start predicting: 2026-10-18 23:30:36.116142
+2026/10/18 23:30:38 - __main__ - INFO - 651 - trainer - Epoch: 14
+2026/10/18 23:30:38 - __main__ - INFO - 659 - trainer - start predicting: 2026-10-18 23:30:38.204521
+2026/10/18 23:30:40 - __main__ - INFO - 651 - trainer - Epoch: 15
+2026/10/18 23:30:40 - __main__ - INFO - 659 - trainer - start predicting: 2026-10-18 23:30:40.275699
+2026/10/18 23:30:42 - __main__ - INFO - 651 - trainer - Epoch: 16
+2026/10/18 23:30:42 - __main__ - INFO - 659 - trainer - start predicting: 2026-10-18 23:30:42.390629
+2026/10/18 23:30:44 - __main__ - INFO - 651 - trainer - Epoch: 17
+2026/10/18 23:30:44 - __main__ - INFO - 659 - trainer - start predicting: 2026-10-18 23:30:44.470187
+2026/10/18 23:30:46 - __main__ - INFO - 651 - trainer - Epoch: 18
+2026/10/18 23:30:46 - __main__ - INFO - 659 - trainer - start predicting: 2026-10-18 23:30:46.580661
+2026/10/18 23:30:48 - __main__ - INFO - 651 - trainer - Epoch: 19
+2026/10/18 23:30:48 - __main__ - INFO - 659 - trainer - start predicting: 2026-10-18 23:30:48.663195
+2026/10/18 23:30:50 - __main__ - INFO - 651 - trainer - Epoch: 20
+2026/10/18 23:30:50 - __main__ - INFO - 659 - trainer - start predicting: 2026-10-18 23:30:50.723048
+2026/10/18 23:30:52 - __main__ - INFO - 651 - trainer - Epoch: 21
+2026/10/18 23:30:52 - __main__ - INFO - 659 - trainer - start predicting: 2026-10-18 23:30:52.811299
+2026/10/18 23:30:54 - __main__ - INFO - 651 - trainer - Epoch: 22
+2026/10/18 23:30:54 - __main__ - INFO - 659 - trainer - start predicting: 2026-10-18 23:30:54.921840
+2026/10/18 23:30:56 - __main__ - INFO - 753 - trainer - {'Best_HR@5': 38.623, 'Best_NDCG@5': 27.8792, 'Best_HR@10': 49.1699, 'Best_NDCG@10': 31.2133, 'Best_HR@20': 60.9863, 'Best_NDCG@20': 34.2289}
+2026/10/18 23:30:56 - __main__ - INFO - 754 - trainer - {'Best_epoch_HR@5': 19, 'Best_epoch_NDCG@5': 19, 'Best_epoch_HR@10': 18, 'Best_epoch_NDCG@10': 17, 'Best_epoch_HR@20': 13, 'Best_epoch_NDCG@20': 17}
+2026/10/18 23:30:57 - __main__ - INFO - 819 - trainer - REWARD_SET_RESULTS: {'Overall_HR@10': 0.4873046875, 'Popular_HR@10': 0.716236722306525, 'Tail_HR@10': 0.09854014598540146, 'counts': {'Overall': 1024, 'Popular': 659, 'Tail': 274}}
+2026/10/18 23:30:57 - __main__ - INFO - 926 - trainer - Target Popularity Definition---------------------------------------------
+2026/10/18 23:30:57 - __main__ - INFO - 931 - trainer - {'domain': 'Target', 'popular_ratio': 0.2, 'observed_train_items': 20880, 'popular_items': 4176, 'unpopular_seen_items': 16704, 'unseen_items_in_test': 'calculated from test ground truth'}
+2026/10/18 23:30:58 - __main__ - INFO - 1207 - trainer - %s Test Overall------------------------------------------------------
+2026/10/18 23:30:58 - __main__ - INFO - 1211 - trainer - {'HR@5': 37.8891, 'NDCG@5': 28.0358, 'HR@10': 48.784, 'NDCG@10': 31.5678, 'HR@20': 61.6245, 'NDCG@20': 34.8031}
+2026/10/18 23:30:58 - __main__ - INFO - 1302 - trainer - Target Test Group Size----------------------------------------------
+2026/10/18 23:30:58 - __main__ - INFO - 1307 - trainer - {'domain': 'Target', 'Overall_test_samples': 2056, 'Popular_test_samples': 1358, 'Unpopular_seen_test_samples': 511, 'Unseen_test_samples': 187, 'Grouped_test_samples': 2056}
+2026/10/18 23:30:58 - __main__ - INFO - 1309 - trainer - Target Test Popular Ground Truth-------------------------------------
+2026/10/18 23:30:58 - __main__ - INFO - 1314 - trainer - {'HR@5': 56.0383, 'NDCG@5': 41.7561, 'HR@10': 70.0295, 'NDCG@10': 46.3013, 'HR@20': 83.3579, 'NDCG@20': 49.681}
+2026/10/18 23:30:58 - __main__ - INFO - 1316 - trainer - Target Test Unpopular-Seen Ground Truth------------------------------
+2026/10/18 23:30:58 - __main__ - INFO - 1321 - trainer - {'HR@5': 3.5225, 'NDCG@5': 1.8331, 'HR@10': 10.1761, 'NDCG@10': 3.9652, 'HR@20': 26.4188, 'NDCG@20': 8.0008}
+2026/10/18 23:30:58 - __main__ - INFO - 1325 - trainer - Target Test Unseen Ground Truth--------------------------------------
+2026/10/18 23:30:58 - __main__ - INFO - 1330 - trainer - {'HR@5': 0.0, 'NDCG@5': 0.0, 'HR@10': 0.0, 'NDCG@10': 0.0, 'HR@20': 0.0, 'NDCG@20': 0.0}
+2026/10/18 23:30:58 - __main__ - INFO - 1332 - trainer - Target Recommendation Popularity-------------------------------------
+2026/10/18 23:30:58 - __main__ - INFO - 1337 - trainer - {'PopularRatio@5': 87.2276, 'PopularRatio@10': 73.4241, 'PopularRatio@20': 56.0506}
+2026/10/18 23:30:58 - __main__ - INFO - 1340 - trainer - Best Eval---------------------------------------------------------
+2026/10/18 23:30:58 - __main__ - INFO - 1343 - trainer - {'Best_HR@5': 38.623, 'Best_NDCG@5': 27.8792, 'Best_HR@10': 49.1699, 'Best_NDCG@10': 31.2133, 'Best_HR@20': 60.9863, 'Best_NDCG@20': 34.2289}
+2026/10/18 23:30:58 - __main__ - INFO - 1344 - trainer - {'Best_epoch_HR@5': 19, 'Best_epoch_NDCG@5': 19, 'Best_epoch_HR@10': 18, 'Best_epoch_NDCG@10': 17, 'Best_epoch_HR@20': 13, 'Best_epoch_NDCG@20': 17}
+2026/10/18 23:30:59 - __main__ - INFO - 312 - main - Target model saved at: ./saved_model/movie_video/target_model.pth

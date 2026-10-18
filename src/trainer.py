@@ -319,15 +319,20 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
     for epoch_temp in range(epochs):
 
         model_joint.train()
+        epoch_train_data = train_data.sample(
+            frac=1.0,
+            random_state=args.random_seed + epoch_temp
+        ).reset_index(drop=True)
         flag_update = 0
         for j in range(num_batches):
             # ==============================
             # Step 1: Load Original Batch
             # ==============================
 
-            batch_df = train_data.sample(
-                n=args.batch_size
-            ).reset_index(drop=True)
+            batch_df = epoch_train_data.iloc[
+                j * args.batch_size:
+                (j + 1) * args.batch_size
+            ].copy().reset_index(drop=True)
 
             batch_weights = None
             joint_log_prob = None
@@ -353,7 +358,8 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                     duplicate_idx,
                     sample_weights,
                     joint_log_prob,
-                    budget_carry
+                    budget_carry,
+                    alpha_indices
                 ) = sample_actions(
                     agent,
                     states,
@@ -588,6 +594,30 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                 # ==============================
 
                 if j < 5 or (j + 1) % 5 == 0:
+                    
+                    # Action B: State Distribution
+                    tail_states = states[eligible_mask]
+                    selected_states = states[duplicate_idx]
+
+                    tail_mean_hpr = tail_states[:, 0].mean().item()
+                    tail_mean_f = tail_states[:, 1].mean().item()
+
+                    if len(selected_states) > 0:
+                        selected_mean_hpr = (
+                            selected_states[:, 0].mean().item()
+                        )
+                        selected_mean_f = (
+                            selected_states[:, 1].mean().item()
+                        )
+                    else:
+                        selected_mean_hpr = float("nan")
+                        selected_mean_f = float("nan")
+
+                    # Action C: Alpha Distribution
+                    alpha_counts = torch.bincount(
+                        alpha_indices,
+                        minlength=4
+                    ).cpu().tolist()
 
                     tail_count = eligible_mask.sum().item()
                     duplicate_count = duplicate_idx.numel()
@@ -605,6 +635,15 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                         f"Tail_HR@10={metrics['Tail_HR@10']:.4f}, "
                         f"Overall_HR@10={metrics['Overall_HR@10']:.4f}, "
                         f"Popular_HR@10={metrics['Popular_HR@10']:.4f}"
+                        f"TailMeanHPR={tail_mean_hpr:.4f}, "
+                        f"SelectedMeanHPR={selected_mean_hpr:.4f}, "
+                        f"TailMeanF={tail_mean_f:.4f}, "
+                        f"SelectedMeanF={selected_mean_f:.4f}, "
+                        f"AlphaCounts={alpha_counts}, "
+                        f"SelectionDelta={selection_delta:.8f}, "
+                        f"WeightDelta={weight_delta:.8f}, "
+                        f"SelectionDelta={selection_delta:.8f}, "
+                        f"WeightDelta={weight_delta:.8f}, "
                     )
 
                     print(message)
