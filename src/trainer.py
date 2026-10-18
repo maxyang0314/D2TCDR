@@ -3,11 +3,26 @@ import torch.optim as optim
 import datetime
 import torch
 import numpy as np
+import pandas as pd
 import copy
-import time
-import random
 
 from collections import Counter
+
+from agent.state import (
+    build_target_frequency,
+    build_sample_states
+)
+
+from agent.policy import (
+    DebiasAgent,
+    sample_actions
+)
+
+from agent.reward import (
+    RewardBaseline,
+    calculate_reward,
+    evaluate_reward
+)
 
 def optimizers(model, args):
     if args.optimizer.lower() == 'adam':
@@ -134,352 +149,6 @@ def build_item_popularity_groups(
         item_counter
     )
 
-def calculate_sequence_popular_ratio(
-    seq,
-    popular_items
-):
-    """
-    計算一條 sequence 中 Popular interaction 的比例。
-    Padding 0 不計算。
-    """
-
-    valid_items = [
-        int(item)
-        for item in seq
-        if int(item) != 0
-    ]
-
-    if len(valid_items) == 0:
-        return 0.0
-
-    popular_count = sum(
-        1
-        for item in valid_items
-        if item in popular_items
-    )
-
-    return popular_count / len(valid_items)
-
-def pad_or_truncate_sequence(seq, max_len):
-    """
-    移除 padding 0，
-    保留最近 max_len 個 interaction，
-    最後重新 left padding。
-    """
-
-    real_items = [
-        int(item)
-        for item in seq
-        if int(item) != 0
-    ]
-
-    real_items = real_items[-max_len:]
-
-    return (
-        [0] * (max_len - len(real_items))
-        + real_items
-    )
-
-def dropout_older_context(
-    seq,
-    max_len,
-    drop_probability,
-    preserve_recent,
-    rng
-):
-    """
-    只對較早的歷史 context 做 dropout。
-
-    - 不修改 next
-    - 不改 interaction order
-    - 最近 preserve_recent 個 interaction 一定保留
-    """
-
-    if not 0.0 <= drop_probability <= 1.0:
-        raise ValueError(
-            'tail_drop_probability must be between 0 and 1.'
-        )
-
-    if preserve_recent < 1:
-        raise ValueError(
-            'tail_preserve_recent must be at least 1.'
-        )
-
-    real_items = [
-        int(item)
-        for item in seq
-        if int(item) != 0
-    ]
-
-    # 沒有足夠的較早 context 可以刪
-    if len(real_items) <= preserve_recent:
-        return pad_or_truncate_sequence(
-            real_items,
-            max_len
-        )
-
-    older_items = (
-        real_items[:-preserve_recent]
-    )
-
-    recent_items = (
-        real_items[-preserve_recent:]
-    )
-
-    # 只 dropout 較早 interaction
-    kept_older_items = [
-        item
-        for item in older_items
-        if rng.random() >= drop_probability
-    ]
-
-    augmented_items = (
-        kept_older_items
-        + recent_items
-    )
-
-    return pad_or_truncate_sequence(
-        augmented_items,
-        max_len
-    )
-
-def rule_based_tail_context_regulation(
-    batch_df,
-    popular_items,
-    unpopular_seen_items,
-    context_threshold,
-    max_len,
-    augmentation_probability,
-    drop_probability,
-    preserve_recent,
-    random_seed
-):
-    """
-    D2: Rule-based Tail-target Context Regulation
-
-    State:
-        S1 = Sequence Popularity
-        S2 = Next-item Popularity
-
-    Rule:
-        Next = Unpopular
-        AND
-        Sequence Popular Ratio > context_threshold
-            -> eligible for context dropout
-
-        otherwise
-            -> keep original sequence
-    """
-
-    if not 0.0 <= augmentation_probability <= 1.0:
-        raise ValueError(
-            'tail_aug_probability must be between 0 and 1.'
-        )
-
-    batch_df = (
-        batch_df
-        .copy()
-        .reset_index(drop=True)
-    )
-
-    rng = random.Random(
-        random_seed
-    )
-
-    # -------------------------------
-    # Statistics
-    # -------------------------------
-
-    unpopular_next_samples = 0
-    eligible_samples = 0
-    augmented_samples = 0
-
-    dropped_item_count = 0
-
-    eligible_pop_ratio_sum = 0.0
-
-    for row_index in batch_df.index:
-
-        target_item = int(
-            batch_df.at[
-                row_index,
-                'next'
-            ]
-        )
-
-        # ========================================
-        # S2: Next-item Popularity
-        #
-        # Popular Next -> Normal
-        # ========================================
-
-        if target_item not in unpopular_seen_items:
-            continue
-
-        unpopular_next_samples += 1
-
-        original_seq = list(
-            batch_df.at[
-                row_index,
-                'seq'
-            ]
-        )
-
-        # ========================================
-        # S1: Sequence Popularity
-        # ========================================
-
-        seq_pop_ratio = (
-            calculate_sequence_popular_ratio(
-                original_seq,
-                popular_items
-            )
-        )
-
-        # ========================================
-        # Rule:
-        #
-        # Unpopular Next
-        # + Popular-context
-        # ========================================
-
-        if seq_pop_ratio <= context_threshold:
-            continue
-
-        eligible_samples += 1
-        eligible_pop_ratio_sum += (
-            seq_pop_ratio
-        )
-
-        # 並非所有 eligible sample 都做 augmentation
-        if rng.random() >= augmentation_probability:
-            continue
-
-        original_real_length = sum(
-            int(item) != 0
-            for item in original_seq
-        )
-
-        augmented_seq = (
-            dropout_older_context(
-                seq=original_seq,
-                max_len=max_len,
-                drop_probability=drop_probability,
-                preserve_recent=preserve_recent,
-                rng=rng
-            )
-        )
-
-        augmented_real_length = sum(
-            int(item) != 0
-            for item in augmented_seq
-        )
-
-        batch_df.at[
-            row_index,
-            'seq'
-        ] = augmented_seq
-
-        if 'len_seq' in batch_df.columns:
-
-            batch_df.at[
-                row_index,
-                'len_seq'
-            ] = augmented_real_length
-
-        augmented_samples += 1
-
-        dropped_item_count += max(
-            0,
-            original_real_length
-            - augmented_real_length
-        )
-
-    stats = {
-
-        'batch_size':
-            len(batch_df),
-
-        'unpopular_next_samples':
-            unpopular_next_samples,
-
-        'eligible_popcontext_unpopnext':
-            eligible_samples,
-
-        'augmented_samples':
-            augmented_samples,
-
-        'eligible_ratio':
-            round(
-                eligible_samples
-                / max(len(batch_df), 1),
-                4
-            ),
-
-        'augmentation_ratio_among_eligible':
-            round(
-                augmented_samples
-                / max(eligible_samples, 1),
-                4
-            ),
-
-        'avg_eligible_sequence_pop_ratio':
-            round(
-                eligible_pop_ratio_sum
-                / max(eligible_samples, 1),
-                4
-            ),
-
-        'dropped_items':
-            dropped_item_count
-    }
-
-    return (
-        batch_df,
-        stats
-    )
-
-def build_context_group_masks(
-    seq_batch,
-    popular_items,
-    threshold,
-    device
-):
-    """
-    Popular Ratio > threshold  → Popular-context
-    Popular Ratio < threshold  → Tail-context
-    Popular Ratio == threshold → Balanced，不放入 group MMD
-    """
-
-    ratios = []
-
-    for seq in seq_batch:
-        ratio = calculate_sequence_popular_ratio(
-            seq,
-            popular_items
-        )
-        ratios.append(ratio)
-
-    ratio_tensor = torch.tensor(
-        ratios,
-        dtype=torch.float32,
-        device=device
-    )
-
-    popular_mask = (
-        ratio_tensor > threshold
-    )
-
-    tail_mask = (
-        ratio_tensor < threshold
-    )
-
-    return (
-        popular_mask,
-        tail_mask,
-        ratio_tensor
-    )
-
 def per_sample_metrics(scores, labels, ks):
     """
     回傳每一筆測試資料各自的 HR@K 與 NDCG@K，
@@ -527,7 +196,6 @@ def per_sample_metrics(scores, labels, ks):
 
     return metrics, topk_indices
 
-
 def init_metric_sums(ks):
     """初始化指標加總值。"""
     metric_sums = {}
@@ -563,7 +231,7 @@ def hrs_and_ndcgs_k(scores, labels, ks):
         metrics['NDCG@%d' % k] = ndcg_temp
     return metrics  
 
-def model_train(train_data, val_data, test_data, con_data, model_joint, args, logger, pretrain_flag):
+def model_train(train_data, val_data, test_data, con_data, model_joint, args, logger, pretrain_flag, reward_data=None):
     epochs = args.epochs
     device = args.device
     metric_ks = args.metric_ks
@@ -578,345 +246,378 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
     bad_count = 0
     num_rows=train_data.shape[0]
     num_batches=int(num_rows/args.batch_size)
-    # ============================================================
-    # Experiment E：Group-aware Alignment
-    # ============================================================
+    
+    # ==============================
+    # Agent Initialization
+    # ==============================
 
-    source_popular_items = None
-    target_popular_items = None
-
-    if (
-        pretrain_flag
-        and args.group_alignment == 1
-    ):
-
-        (
-            source_popular_items,
-            _,
-            _,
-            _
-        ) = build_item_popularity_groups(
-            train_data,
-            popular_ratio=args.popular_ratio
-        )
-
-        (
-            target_popular_items,
-            _,
-            _,
-            _
-        ) = build_item_popularity_groups(
-            con_data,
-            popular_ratio=args.popular_ratio
-        )
-
-        group_alignment_info = {
-            'group_alignment': True,
-            'alignment_mode': args.group_alignment_mode,
-            'context_threshold':
-                args.group_context_threshold,
-            'popular_weight':
-                args.group_pop_weight,
-            'tail_weight':
-                args.group_tail_weight,
-            'source_popular_items':
-                len(source_popular_items),
-            'target_popular_items':
-                len(target_popular_items)
-        }
-
-        print(
-            'Group-aware Alignment Definition'
-            '------------------------------------'
-        )
-        print(group_alignment_info)
-
-        logger.info(
-            'Group-aware Alignment Definition'
-            '------------------------------------'
-        )
-        logger.info(group_alignment_info)
-
-    # ============================================================
-    # D2: Tail-target Context Regulation
-    # Only used in Stage-2 Target training
-    # ============================================================
-
-    d2_target_popular_items = None
-    d2_target_unpopular_items = None
-
-    if (
+    use_agent = (
         not pretrain_flag
-        and args.tail_context_regulation == 1
-    ):
+        and args.agent_enabled == 1
+    )
+
+    best_model = copy.deepcopy(model_joint)
+    best_val_ndcg10 = float("-inf")
+
+    agent = None
+    best_agent_state = None
+
+    budget_carry = 0.0
+
+    if not pretrain_flag:
 
         (
-            d2_target_popular_items,
-            d2_target_unpopular_items,
-            _,
-            _
+            popular_items,
+            tail_items,
+            observed_items,
+            item_counter
         ) = build_item_popularity_groups(
             train_data,
             popular_ratio=args.popular_ratio
         )
 
-        d2_setup = {
-
-            'D2':
-                'Tail-target Context Regulation',
-
-            'State_1':
-                'Sequence Popularity',
-
-            'State_2':
-                'Next-item Popularity',
-
-            'Rule':
-                (
-                    'Unpopular Next + '
-                    f'SeqPopRatio > '
-                    f'{args.group_context_threshold}'
-                    ' -> Context Dropout'
-                ),
-
-            'augmentation_probability':
-                args.tail_aug_probability,
-
-            'drop_probability':
-                args.tail_drop_probability,
-
-            'preserve_recent':
-                args.tail_preserve_recent,
-
-            'popular_items':
-                len(d2_target_popular_items),
-
-            'unpopular_seen_items':
-                len(d2_target_unpopular_items)
-        }
-
-        print(
-            'D2 Tail-target Context Regulation'
-            '---------------------------------------------'
+        target_counter, max_frequency = (
+            build_target_frequency(train_data)
         )
 
-        print(d2_setup)
+        if reward_data is None or len(reward_data) == 0:
+            raise ValueError(
+                "Target training requires Reward Set."
+            )
 
-        logger.info(
-            'D2 Tail-target Context Regulation'
+        if args.reward_eval_samples > 0:
+            reward_subset = reward_data.iloc[
+                :args.reward_eval_samples
+            ].copy()
+        else:
+            reward_subset = reward_data.copy()
+
+    if use_agent:
+
+        agent = DebiasAgent(
+            hidden_dim=args.agent_hidden
+        ).to(device)
+
+        agent_optimizer = optim.Adam(
+            agent.parameters(),
+            lr=args.agent_lr
         )
 
-        logger.info(
-            d2_setup
+        reward_baseline = RewardBaseline(
+            window=args.reward_baseline_window
         )
+
+        best_agent_state = copy.deepcopy(
+            agent.state_dict()
+        )
+
+        print("RL Agent Enabled")
+        print("Popular Items:", len(popular_items))
+        print("Tail Items:", len(tail_items))
+        print("Reward Samples:", len(reward_subset))
 
     for epoch_temp in range(epochs):
 
         model_joint.train()
         flag_update = 0
         for j in range(num_batches):
-            batch_df = train_data.sample(n=args.batch_size).copy()
-            d2_batch_stats = None
+            # ==============================
+            # Step 1: Load Original Batch
+            # ==============================
 
-            # ========================================================
-            # D2 only applies to Stage-2 Target training
-            # ========================================================
+            batch_df = train_data.sample(
+                n=args.batch_size
+            ).reset_index(drop=True)
 
-            if (
-                not pretrain_flag
-                and args.tail_context_regulation == 1
-            ):
+            batch_weights = None
+            joint_log_prob = None
 
-                augmentation_seed = (
-                    args.random_seed
-                    + epoch_temp * num_batches
-                    + j
-                    + 100000
+            # ==============================
+            # Step 2: Agent Joint Action
+            # ==============================
+
+            if use_agent:
+
+                states, eligible_mask = (
+                    build_sample_states(
+                        batch_df,
+                        popular_items,
+                        tail_items,
+                        target_counter,
+                        max_frequency,
+                        device
+                    )
                 )
 
                 (
-                    batch_df,
-                    d2_batch_stats
-                ) = rule_based_tail_context_regulation(
-
-                    batch_df=batch_df,
-
-                    popular_items=
-                        d2_target_popular_items,
-
-                    unpopular_seen_items=
-                        d2_target_unpopular_items,
-
-                    context_threshold=
-                        args.group_context_threshold,
-
-                    max_len=
-                        args.max_len,
-
-                    augmentation_probability=
-                        args.tail_aug_probability,
-
-                    drop_probability=
-                        args.tail_drop_probability,
-
-                    preserve_recent=
-                        args.tail_preserve_recent,
-
-                    random_seed=
-                        augmentation_seed
+                    duplicate_idx,
+                    sample_weights,
+                    joint_log_prob,
+                    budget_carry
+                ) = sample_actions(
+                    agent,
+                    states,
+                    eligible_mask,
+                    budget_carry=budget_carry,
+                    budget_ratio=args.agent_budget_ratio
                 )
 
-                # ========================================================
-                # D2 Batch Check
-                # 只顯示第一個 epoch 的前三個 batch
-                # ========================================================
+                # Action B: Duplicate Samples
+                if duplicate_idx.numel() > 0:
 
-                if (
-                    not pretrain_flag
-                    and args.tail_context_regulation == 1
-                    and epoch_temp == 0
-                    and j < 3
-                ):
-
-                    print(
-                        'D2 Context Regulation Batch Check'
-                        '---------------------------------------------'
+                    duplicate_positions = (
+                        duplicate_idx.detach()
+                        .cpu()
+                        .tolist()
                     )
 
-                    print(d2_batch_stats)
+                    duplicate_rows = batch_df.iloc[
+                        duplicate_positions
+                    ].copy()
 
-                    logger.info(
-                        'D2 Context Regulation Batch Check'
+                    batch_df = pd.concat(
+                        [batch_df, duplicate_rows],
+                        ignore_index=True
                     )
 
-                    logger.info(d2_batch_stats)
-            seq_list = (
-                batch_df['seq'].tolist()
+                # Action C: Weights
+                # Duplicates inherit original weights
+                batch_weights = torch.cat(
+                    [
+                        sample_weights,
+                        sample_weights[duplicate_idx]
+                    ]
+                ).detach()
+
+            # ==============================
+            # Step 3: Build Tensors
+            # ==============================
+
+            seq = torch.as_tensor(
+                batch_df["seq"].tolist(),
+                dtype=torch.long,
+                device=device
             )
 
-            target_list = (
-                batch_df['next'].tolist()
-            )
+            target = torch.as_tensor(
+                batch_df["next"].tolist(),
+                dtype=torch.long,
+                device=device
+            ).unsqueeze(1)
+
             optimizer.zero_grad()
-            seq = torch.LongTensor(seq_list).to(device)
-            target = (torch.LongTensor(target_list).unsqueeze(1).to(device))
 
-            # ========================================================
-            # Target condition：
-            # 維持原本 uniform random sampling
-            # ========================================================
+            # ==============================
+            # Step 4: Source Condition
+            # ==============================
 
             if pretrain_flag:
 
-                con_batch_df = con_data.sample(n=args.batch_size)
-                con_seq_list = con_batch_df['seq'].tolist()
-                con_seq = torch.LongTensor(con_seq_list).to(device)
+                con_batch_df = con_data.sample(
+                    n=args.batch_size
+                )
 
-                # ====================================================
-                # Experiment E：
-                # 建立 Source / Target Popular/Tail context masks
-                # ====================================================
+                con_seq = torch.as_tensor(
+                    con_batch_df["seq"].tolist(),
+                    dtype=torch.long,
+                    device=device
+                )
 
-                if args.group_alignment == 1:
-
-                    (
-                        source_pop_mask,
-                        source_tail_mask,
-                        source_context_ratios
-                    ) = build_context_group_masks(
-                        seq_list,
-                        source_popular_items,
-                        args.group_context_threshold,
-                        device
-                    )
-
-                    (
-                        target_pop_mask,
-                        target_tail_mask,
-                        target_context_ratios
-                    ) = build_context_group_masks(
-                        con_seq_list,
-                        target_popular_items,
-                        args.group_context_threshold,
-                        device
-                    )
-                else:
-                    source_pop_mask = None
-                    source_tail_mask = None
-                    target_pop_mask = None
-                    target_tail_mask = None
             else:
                 con_seq = None
-                source_pop_mask = None
-                source_tail_mask = None
-                target_pop_mask = None
-                target_tail_mask = None
-            if (
-                pretrain_flag
-                and args.group_alignment == 1
-                and j == 0
-            ):
 
-                group_batch_stats = {
-                    'Epoch':
-                        epoch_temp,
+            # ==============================
+            # Step 5: D2TCDR Forward
+            # ==============================
 
-                    'Source Popular-context':
-                        int(
-                            source_pop_mask
-                            .sum()
-                            .item()
-                        ),
+            (
+                scores,
+                diffu_rep,
+                _,
+                _,
+                _,
+                _,
+                em_loss
+            ) = model_joint(
+                seq,
+                target,
+                con_seq,
+                pretrain_flag,
+                args,
+                epoch_temp,
+                train_flag=True
+            )  
+            
+            # ==============================
+            # Step 6: Recommendation Loss
+            # ==============================
 
-                    'Source Tail-context':
-                        int(
-                            source_tail_mask
-                            .sum()
-                            .item()
-                        ),
+            if use_agent:
 
-                    'Target Popular-context':
-                        int(
-                            target_pop_mask
-                            .sum()
-                            .item()
-                        ),
-
-                    'Target Tail-context':
-                        int(
-                            target_tail_mask
-                            .sum()
-                            .item()
-                        )
-                }
-
-                print(
-                    'Group-aware Alignment Batch'
-                    '------------------------------------'
+                ce_per_sample = (
+                    model_joint.loss_diffu_ce_per_sample(
+                        diffu_rep,
+                        target,
+                        pretrain_flag=False
+                    )
                 )
 
-                print(group_batch_stats)
-
-                logger.info(
-                    'Group-aware Alignment Batch'
-                    '------------------------------------'
+                assert (
+                    ce_per_sample.numel()
+                    == batch_weights.numel()
                 )
 
-                logger.info(
-                    group_batch_stats
+                weighted_ce = (
+                    ce_per_sample * batch_weights
                 )
-            scores, diffu_rep, weights, t, item_rep_dis, seq_rep_dis, em_loss = model_joint(seq, target, con_seq, pretrain_flag, args, epoch_temp, train_flag=True,
-            source_pop_mask=source_pop_mask, source_tail_mask=source_tail_mask, target_pop_mask=target_pop_mask, target_tail_mask=target_tail_mask)  
-            loss_diffu_value = model_joint.loss_diffu_ce(diffu_rep, target, pretrain_flag)  ## use this not above        
-            loss_all = loss_diffu_value + em_loss*args.loss_lambda
+
+                loss_diffu_value = (
+                    weighted_ce.sum()
+                    / ce_per_sample.numel()
+                )
+
+            else:
+
+                loss_diffu_value = (
+                    model_joint.loss_diffu_ce(
+                        diffu_rep,
+                        target,
+                        pretrain_flag
+                    )
+                )
+
+            # Preserve Original Auxiliary Loss
+            loss_all = (
+                loss_diffu_value
+                + em_loss * args.loss_lambda
+            )
+
+            # ==============================
+            # Step 7: Update D2TCDR
+            # ==============================
+
             loss_all.backward()
-        
             optimizer.step()
+
+            # ==============================
+            # Step 8: Reward Evaluation
+            # ==============================
+
+            if use_agent and joint_log_prob is not None:
+
+                metrics = evaluate_reward(
+                    model_joint,
+                    reward_subset,
+                    args,
+                    popular_items,
+                    tail_items,
+                    epoch=epoch_temp,
+                    random_seed=args.random_seed + 707
+                )
+
+                reward = calculate_reward(
+                    metrics,
+                    args.reward_ref_overall,
+                    args.reward_ref_popular,
+                    args.reward_lambda_overall,
+                    args.reward_lambda_popular,
+                    args.reward_epsilon_overall,
+                    args.reward_epsilon_popular
+                )
+
+                # ==============================
+                # Step 9: Advantage
+                # ==============================
+
+                previous_average = (
+                    reward_baseline.previous_average(
+                        reward
+                    )
+                )
+
+                advantage = (
+                    reward - previous_average
+                )
+
+                # ==============================
+                # Step 10: REINFORCE
+                # ==============================
+
+                agent_optimizer.zero_grad()
+
+                policy_loss = (
+                    -advantage * joint_log_prob
+                )
+
+                policy_loss.backward()
+
+                grad_norm = torch.nn.utils.clip_grad_norm_(
+                    agent.parameters(),
+                    max_norm=5.0
+                )
+
+                # Save parameters before update
+                selection_before = (
+                    agent.selection_head.weight
+                    .detach().clone()
+                )
+
+                weight_before = (
+                    agent.weight_head.weight
+                    .detach().clone()
+                )
+
+                # Update Agent
+                agent_optimizer.step()
+
+                # Measure actual parameter changes
+                selection_delta = (
+                    agent.selection_head.weight.detach()
+                    - selection_before
+                ).abs().max().item()
+
+                weight_delta = (
+                    agent.weight_head.weight.detach()
+                    - weight_before
+                ).abs().max().item()
+
+                reward_baseline.update(reward)
+
+                # ==============================
+                # Logging
+                # ==============================
+
+                if j < 5 or (j + 1) % 5 == 0:
+
+                    tail_count = eligible_mask.sum().item()
+                    duplicate_count = duplicate_idx.numel()
+
+                    message = (
+                        f"Epoch={epoch_temp}, "
+                        f"Batch={j + 1}, "
+                        f"TailSamples={tail_count}, "
+                        f"Oversampled={duplicate_count}, "
+                        f"WeightMax={batch_weights.max().item():.4f}, "
+                        f"Reward={reward:.6f}, "
+                        f"Advantage={advantage:.6f}, "
+                        f"PolicyLoss={policy_loss.item():.6f}, "
+                        f"GradNorm={grad_norm.item():.6f}, "
+                        f"Tail_HR@10={metrics['Tail_HR@10']:.4f}, "
+                        f"Overall_HR@10={metrics['Overall_HR@10']:.4f}, "
+                        f"Popular_HR@10={metrics['Popular_HR@10']:.4f}"
+                    )
+
+                    print(message)
+                    logger.info(message)
+
         print('Epoch: {}'.format(epoch_temp))
         logger.info('Epoch: {}'.format(epoch_temp))
         lr_scheduler.step()
         
-        if epoch_temp != 0 and epoch_temp % args.eval_interval == 0:
+        if (
+            (epoch_temp + 1) % args.eval_interval == 0
+            or (epoch_temp + 1) == epochs
+        ):
             print('start predicting: ', datetime.datetime.now())
             logger.info('start predicting: {}'.format(datetime.datetime.now()))
             model_joint.eval()
@@ -942,25 +643,72 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                     for k, v in metrics.items():
                         metrics_dict[k].append(v)
                         
+            
+            # ==============================
+            # Update Validation Metrics
+            # ==============================
+
             for key_temp, values_temp in metrics_dict.items():
-                values_mean = round(np.mean(values_temp) * 100, 4)
-                if values_mean > best_metrics_dict['Best_' + key_temp]:
-                    flag_update += 1
-                    bad_count = 0
-                    best_metrics_dict['Best_' + key_temp] = values_mean
-                    best_epoch['Best_epoch_' + key_temp] = epoch_temp
-                    
-            if flag_update == 0:
-                bad_count += 1
+
+                values_mean = round(
+                    np.mean(values_temp) * 100,
+                    4
+                )
+
+                if (
+                    values_mean
+                    > best_metrics_dict["Best_" + key_temp]
+                ):
+
+                    best_metrics_dict[
+                        "Best_" + key_temp
+                    ] = values_mean
+
+                    best_epoch[
+                        "Best_epoch_" + key_temp
+                    ] = epoch_temp
+
+            # ==============================
+            # Model Selection: NDCG@10
+            # ==============================
+
+            current_ndcg10 = (
+                np.mean(metrics_dict["NDCG@10"])
+                * 100
+            )
+
+            if current_ndcg10 > best_val_ndcg10:
+
+                best_val_ndcg10 = current_ndcg10
+                bad_count = 0
+
+                best_model = copy.deepcopy(
+                    model_joint
+                )
+
+                if use_agent:
+                    best_agent_state = copy.deepcopy(
+                        agent.state_dict()
+                    )
+
+                if pretrain_flag:
+                    torch.save(
+                        best_model.state_dict(),
+                        "./saved_model/"
+                        + args.s_dataset
+                        + "_"
+                        + args.t_dataset
+                        + "/model.pth"
+                    )
+
+                print(
+                    "Best Validation NDCG@10:",
+                    best_val_ndcg10
+                )
+
             else:
-                print(best_metrics_dict)
-                print(best_epoch)
-                logger.info(best_metrics_dict)
-                logger.info(best_epoch)
-                if flag_update >= 3:
-                    best_model = copy.deepcopy(model_joint)
-                    if pretrain_flag:
-                        torch.save(model_joint.state_dict(), "./saved_model/"+args.s_dataset + "_" + args.t_dataset+"/model.pth")
+                bad_count += 1
+
             if bad_count >= args.patience:
                 break
           
@@ -968,8 +716,74 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
     logger.info(best_metrics_dict)
     logger.info(best_epoch)
         
-    if args.eval_interval > epochs:
+    
+    # ==============================
+    # Fallback Checkpoint
+    # ==============================
+
+    if best_val_ndcg10 == float("-inf"):
+
         best_model = copy.deepcopy(model_joint)
+
+        if use_agent:
+            best_agent_state = copy.deepcopy(
+                agent.state_dict()
+            )
+
+    best_model.eval()
+
+    # ==============================
+    # Save Agent Policy
+    # ==============================
+
+    if use_agent:
+
+        import os
+
+        model_dir = (
+            "./saved_model/"
+            + args.s_dataset
+            + "_"
+            + args.t_dataset
+        )
+
+        os.makedirs(
+            model_dir,
+            exist_ok=True
+        )
+
+        torch.save(
+            best_agent_state,
+            model_dir + "/agent_policy.pth"
+        )
+
+        print("Agent Policy Saved")
+
+    # ==============================
+    # Evaluate Reward Reference
+    # ==============================
+
+    if not pretrain_flag:
+
+        reward_metrics = evaluate_reward(
+            best_model,
+            reward_subset,
+            args,
+            popular_items,
+            tail_items,
+            random_seed=args.random_seed + 707
+        )
+
+        print(
+            "REWARD_SET_RESULTS:",
+            reward_metrics
+        )
+
+        logger.info(
+            "REWARD_SET_RESULTS: %s",
+            reward_metrics
+        )
+
     
     top_100_item = []
 

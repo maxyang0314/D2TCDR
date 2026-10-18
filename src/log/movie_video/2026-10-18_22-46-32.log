@@ -1,0 +1,46 @@
+2026/10/18 22:46:32 - __main__ - INFO - 105 - main - Namespace(agent_budget_ratio=0.2, agent_enabled=0, agent_hidden=32, agent_lr=0.0001, batch_size=512, decay_step=100, description='Diffu_norm_score', device='cuda', diffusion_steps=32, dropout=0.1, emb_dropout=0.3, epochs=2, eval_interval=5, gamma=0.1, hidden_act='gelu', hidden_size=128, lambda_uncertainty=0.001, log_file='log/', loss_lambda=1, lr=0.001, max_len=8, metric_ks=[5, 10, 20], momentum=None, noise_schedule='trunc_lin', num_blocks=4, num_gpu=1, optimizer='Adam', p=0.3, patience=2, popular_ratio=0.2, random_seed=1997, rescale_timesteps=True, reward_baseline_window=50, reward_epsilon_overall=0.002, reward_epsilon_popular=0.002, reward_eval_samples=256, reward_holdout_ratio=0.1, reward_lambda_overall=1.0, reward_lambda_popular=1.0, reward_ref_overall=None, reward_ref_popular=None, s_dataset='movie', schedule_sampler_name='lossaware', skip_source_pretrain=False, t_dataset='video', w=1.0, weight_decay=0)
+2026/10/18 22:46:40 - __main__ - INFO - 583 - trainer - Epoch: 0
+2026/10/18 22:46:44 - __main__ - INFO - 583 - trainer - Epoch: 1
+2026/10/18 22:46:44 - __main__ - INFO - 682 - trainer - {'Best_HR@5': 0, 'Best_NDCG@5': 0, 'Best_HR@10': 0, 'Best_NDCG@10': 0, 'Best_HR@20': 0, 'Best_NDCG@20': 0}
+2026/10/18 22:46:44 - __main__ - INFO - 683 - trainer - {'Best_epoch_HR@5': 0, 'Best_epoch_NDCG@5': 0, 'Best_epoch_HR@10': 0, 'Best_epoch_NDCG@10': 0, 'Best_epoch_HR@20': 0, 'Best_epoch_NDCG@20': 0}
+2026/10/18 22:46:45 - __main__ - INFO - 855 - trainer - Source Popularity Definition---------------------------------------------
+2026/10/18 22:46:45 - __main__ - INFO - 860 - trainer - {'domain': 'Source', 'popular_ratio': 0.2, 'observed_train_items': 89276, 'popular_items': 17856, 'unpopular_seen_items': 71420, 'unseen_items_in_test': 'calculated from test ground truth'}
+2026/10/18 22:46:52 - __main__ - INFO - 1136 - trainer - %s Test Overall------------------------------------------------------
+2026/10/18 22:46:52 - __main__ - INFO - 1140 - trainer - {'HR@5': 13.7402, 'NDCG@5': 9.0953, 'HR@10': 21.138, 'NDCG@10': 11.4686, 'HR@20': 34.0338, 'NDCG@20': 14.6917}
+2026/10/18 22:46:52 - __main__ - INFO - 1231 - trainer - Source Test Group Size----------------------------------------------
+2026/10/18 22:46:52 - __main__ - INFO - 1236 - trainer - {'domain': 'Source', 'Overall_test_samples': 10422, 'Popular_test_samples': 7854, 'Unpopular_seen_test_samples': 1824, 'Unseen_test_samples': 744, 'Grouped_test_samples': 10422}
+2026/10/18 22:46:52 - __main__ - INFO - 1238 - trainer - Source Test Popular Ground Truth-------------------------------------
+2026/10/18 22:46:52 - __main__ - INFO - 1243 - trainer - {'HR@5': 16.603, 'NDCG@5': 11.1422, 'HR@10': 25.0064, 'NDCG@10': 13.8402, 'HR@20': 39.3303, 'NDCG@20': 17.4259}
+2026/10/18 22:46:52 - __main__ - INFO - 1245 - trainer - Source Test Unpopular-Seen Ground Truth------------------------------
+2026/10/18 22:46:52 - __main__ - INFO - 1250 - trainer - {'HR@5': 6.4145, 'NDCG@5': 3.6527, 'HR@10': 11.568, 'NDCG@10': 5.2967, 'HR@20': 21.6557, 'NDCG@20': 7.7945}
+2026/10/18 22:46:52 - __main__ - INFO - 1254 - trainer - Source Test Unseen Ground Truth--------------------------------------
+2026/10/18 22:46:52 - __main__ - INFO - 1259 - trainer - {'HR@5': 1.4785, 'NDCG@5': 0.8302, 'HR@10': 3.7634, 'NDCG@10': 1.5648, 'HR@20': 8.4677, 'NDCG@20': 2.7379}
+2026/10/18 22:46:52 - __main__ - INFO - 1261 - trainer - Source Recommendation Popularity-------------------------------------
+2026/10/18 22:46:52 - __main__ - INFO - 1266 - trainer - {'PopularRatio@5': 36.563, 'PopularRatio@10': 33.2259, 'PopularRatio@20': 29.7903}
+2026/10/18 22:46:52 - __main__ - INFO - 1269 - trainer - Best Eval---------------------------------------------------------
+2026/10/18 22:46:52 - __main__ - INFO - 1272 - trainer - {'Best_HR@5': 0, 'Best_NDCG@5': 0, 'Best_HR@10': 0, 'Best_NDCG@10': 0, 'Best_HR@20': 0, 'Best_NDCG@20': 0}
+2026/10/18 22:46:52 - __main__ - INFO - 1273 - trainer - {'Best_epoch_HR@5': 0, 'Best_epoch_NDCG@5': 0, 'Best_epoch_HR@10': 0, 'Best_epoch_NDCG@10': 0, 'Best_epoch_HR@20': 0, 'Best_epoch_NDCG@20': 0}
+2026/10/18 22:46:53 - __main__ - INFO - 583 - trainer - Epoch: 0
+2026/10/18 22:46:53 - __main__ - INFO - 583 - trainer - Epoch: 1
+2026/10/18 22:46:53 - __main__ - INFO - 588 - trainer - start predicting: 2026-10-18 22:46:53.607624
+2026/10/18 22:46:55 - __main__ - INFO - 682 - trainer - {'Best_HR@5': 6.3477, 'Best_NDCG@5': 3.8889, 'Best_HR@10': 11.8652, 'Best_NDCG@10': 5.6363, 'Best_HR@20': 22.8516, 'Best_NDCG@20': 8.3741}
+2026/10/18 22:46:55 - __main__ - INFO - 683 - trainer - {'Best_epoch_HR@5': 1, 'Best_epoch_NDCG@5': 1, 'Best_epoch_HR@10': 1, 'Best_epoch_NDCG@10': 1, 'Best_epoch_HR@20': 1, 'Best_epoch_NDCG@20': 1}
+2026/10/18 22:46:55 - __main__ - INFO - 748 - trainer - REWARD_SET_RESULTS: {'Overall_HR@10': 0.08984375, 'Popular_HR@10': 0.09523809523809523, 'Tail_HR@10': 0.09375, 'counts': {'Overall': 256, 'Popular': 168, 'Tail': 64}}
+2026/10/18 22:46:55 - __main__ - INFO - 855 - trainer - Target Popularity Definition---------------------------------------------
+2026/10/18 22:46:55 - __main__ - INFO - 860 - trainer - {'domain': 'Target', 'popular_ratio': 0.2, 'observed_train_items': 20880, 'popular_items': 4176, 'unpopular_seen_items': 16704, 'unseen_items_in_test': 'calculated from test ground truth'}
+2026/10/18 22:46:57 - __main__ - INFO - 1136 - trainer - %s Test Overall------------------------------------------------------
+2026/10/18 22:46:57 - __main__ - INFO - 1140 - trainer - {'HR@5': 5.9339, 'NDCG@5': 3.7001, 'HR@10': 11.3813, 'NDCG@10': 5.4413, 'HR@20': 22.2276, 'NDCG@20': 8.1506}
+2026/10/18 22:46:57 - __main__ - INFO - 1231 - trainer - Target Test Group Size----------------------------------------------
+2026/10/18 22:46:57 - __main__ - INFO - 1236 - trainer - {'domain': 'Target', 'Overall_test_samples': 2056, 'Popular_test_samples': 1358, 'Unpopular_seen_test_samples': 511, 'Unseen_test_samples': 187, 'Grouped_test_samples': 2056}
+2026/10/18 22:46:57 - __main__ - INFO - 1238 - trainer - Target Test Popular Ground Truth-------------------------------------
+2026/10/18 22:46:57 - __main__ - INFO - 1243 - trainer - {'HR@5': 6.8483, 'NDCG@5': 4.4056, 'HR@10': 12.2239, 'NDCG@10': 6.1247, 'HR@20': 23.4168, 'NDCG@20': 8.9292}
+2026/10/18 22:46:57 - __main__ - INFO - 1245 - trainer - Target Test Unpopular-Seen Ground Truth------------------------------
+2026/10/18 22:46:57 - __main__ - INFO - 1250 - trainer - {'HR@5': 4.501, 'NDCG@5': 2.6637, 'HR@10': 10.5675, 'NDCG@10': 4.6143, 'HR@20': 21.135, 'NDCG@20': 7.2221}
+2026/10/18 22:46:57 - __main__ - INFO - 1254 - trainer - Target Test Unseen Ground Truth--------------------------------------
+2026/10/18 22:46:57 - __main__ - INFO - 1259 - trainer - {'HR@5': 3.2086, 'NDCG@5': 1.4091, 'HR@10': 7.4866, 'NDCG@10': 2.7387, 'HR@20': 16.5775, 'NDCG@20': 5.0336}
+2026/10/18 22:46:57 - __main__ - INFO - 1261 - trainer - Target Recommendation Popularity-------------------------------------
+2026/10/18 22:46:57 - __main__ - INFO - 1266 - trainer - {'PopularRatio@5': 23.5603, 'PopularRatio@10': 22.3687, 'PopularRatio@20': 20.2724}
+2026/10/18 22:46:57 - __main__ - INFO - 1269 - trainer - Best Eval---------------------------------------------------------
+2026/10/18 22:46:57 - __main__ - INFO - 1272 - trainer - {'Best_HR@5': 6.3477, 'Best_NDCG@5': 3.8889, 'Best_HR@10': 11.8652, 'Best_NDCG@10': 5.6363, 'Best_HR@20': 22.8516, 'Best_NDCG@20': 8.3741}
+2026/10/18 22:46:57 - __main__ - INFO - 1273 - trainer - {'Best_epoch_HR@5': 1, 'Best_epoch_NDCG@5': 1, 'Best_epoch_HR@10': 1, 'Best_epoch_NDCG@10': 1, 'Best_epoch_HR@20': 1, 'Best_epoch_NDCG@20': 1}
+2026/10/18 22:46:57 - __main__ - INFO - 312 - main - Target model saved at: ./saved_model/movie_video/target_model.pth

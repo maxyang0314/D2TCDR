@@ -34,15 +34,26 @@ parser.add_argument('--decay_step', type=int, default=100, help='Decay step for 
 parser.add_argument('--gamma', type=float, default=0.1, help='Gamma for StepLR')
 parser.add_argument('--metric_ks', nargs='+', type=int, default=[5, 10, 20], help='ks for Metric@k')
 parser.add_argument('--popular_ratio', type=float, default=0.2, help='Top ratio of target-domain training items treated as popular')
-parser.add_argument('--group_alignment', type=int, default=1, choices=[0, 1], help='Use Popular/Tail group-aware shared alignment')
-parser.add_argument('--group_context_threshold', type=float, default=0.5, help='Threshold for Popular/Tail sequence context')
-parser.add_argument('--group_pop_weight', type=float, default=1.0, help='Weight for Popular-to-Popular MMD')
-parser.add_argument('--group_tail_weight', type=float, default=1.0, help='Weight for Tail-to-Tail MMD')
-parser.add_argument('--group_alignment_mode', type=str, default='both', choices=['both', 'popular_only', 'tail_only'], help='Which popularity group is used for shared alignment')
-parser.add_argument('--tail_context_regulation', type=int, default=1, choices=[0, 1], help='Enable rule-based context dropout for Popular-context + Unpopular-next samples')
-parser.add_argument('--tail_aug_probability', type=float, default=0.5, help='Probability of applying context dropout to an eligible sample')
-parser.add_argument('--tail_drop_probability', type=float, default=0.2, help='Probability of dropping each older interaction')
-parser.add_argument('--tail_preserve_recent', type=int, default=2, help='Number of recent interactions always preserved')
+# ==============================
+# RL Agent Settings
+# ==============================
+parser.add_argument('--agent_enabled', type=int, default=0, choices=[0, 1])
+parser.add_argument('--agent_lr', type=float, default=0.0001)
+parser.add_argument('--agent_hidden', type=int, default=32)
+parser.add_argument('--agent_budget_ratio', type=float, default=0.20)
+# ==============================
+# Reward Settings
+# ==============================
+parser.add_argument('--reward_holdout_ratio', type=float, default=0.10)
+parser.add_argument('--reward_eval_samples', type=int, default=256)
+parser.add_argument('--reward_ref_overall', type=float, default=None)
+parser.add_argument('--reward_ref_popular', type=float, default=None)
+parser.add_argument('--reward_lambda_overall', type=float, default=1.0)
+parser.add_argument('--reward_lambda_popular', type=float, default=1.0)
+parser.add_argument('--reward_epsilon_overall', type=float, default=0.002)
+parser.add_argument('--reward_epsilon_popular', type=float, default=0.002)
+parser.add_argument('--reward_baseline_window', type=int, default=50)
+parser.add_argument('--skip_source_pretrain', action='store_true')
 parser.add_argument('--optimizer', type=str, default='Adam', choices=['SGD', 'Adam'])
 parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
 parser.add_argument('--loss_lambda', type=float, default=1, help='loss weight for diffusion')
@@ -109,6 +120,47 @@ def main(args):
     t_val_data = pd.read_pickle(t_val_path)
     t_test_data = pd.read_pickle(t_test_path)
 
+    # ==============================
+    # Reward Holdout Split
+    # ==============================
+
+    if args.agent_enabled:
+        if (
+            args.reward_ref_overall is None
+            or args.reward_ref_popular is None
+        ):
+            raise ValueError(
+                "Agent requires reward baseline references."
+            )
+
+        if args.num_gpu != 1:
+            raise ValueError(
+                "Agent prototype currently supports one GPU."
+            )
+
+    if not 0 < args.reward_holdout_ratio < 1:
+        raise ValueError("Invalid reward holdout ratio.")
+
+    # Fixed and reproducible split
+    reward_indices = t_tra_data.sample(
+        frac=args.reward_holdout_ratio,
+        random_state=args.random_seed
+    ).index
+
+    t_reward_data = (
+        t_tra_data.loc[reward_indices]
+        .copy()
+        .reset_index(drop=True)
+    )
+
+    t_tra_data = (
+        t_tra_data.drop(index=reward_indices)
+        .reset_index(drop=True)
+    )
+
+    print("Target Train:", len(t_tra_data))
+    print("Reward Set:", len(t_reward_data))
+
     source_item_num = 98507
     target_item_num = 23978
 
@@ -134,6 +186,30 @@ def main(args):
             if sample not in negative_sample:
                 negative_sample.append(sample)
         t_val_data.at[i, 'negative_samples'] = negative_sample
+    # ==============================
+    # Fixed Reward Candidates
+    # ==============================
+
+    reward_rng = random.Random(args.random_seed + 303)
+
+    t_reward_data['negative_samples'] = None
+
+    for i in range(len(t_reward_data)):
+        positive = int(t_reward_data.at[i, 'next'])
+
+        candidates = [positive]
+
+        while len(candidates) < 101:
+            candidate = reward_rng.randint(
+                1, args.target_item_num
+            )
+
+            if candidate not in candidates:
+                candidates.append(candidate)
+
+        t_reward_data.at[
+            i, 'negative_samples'
+        ] = candidates
     s_test_data['negative_samples'] = None
     m = s_test_data['seq'].size
     for i in range(m):
@@ -158,14 +234,70 @@ def main(args):
     diffu_rec = create_model_diffu(args)
     rec_diffu_joint_model = Att_Diffuse_model(diffu_rec, args)
     
+    # ==============================
+    # Stage 1: Source Pretraining
+    # ==============================
+
+    model_dir = (
+        "./saved_model/"
+        + args.s_dataset + "_"
+        + args.t_dataset
+    )
+
+    os.makedirs(model_dir, exist_ok=True)
+
+    source_checkpoint = model_dir + "/model.pth"
+
     pretrain_flag = True
-    best_model, test_results = model_train(s_tra_data, s_val_data, s_test_data, t_tra_data, rec_diffu_joint_model, args, logger, pretrain_flag)
-    rec_diffu_joint_model.load_state_dict(torch.load("./saved_model/"+args.s_dataset + "_" + args.t_dataset+"/model.pth"))
+
+    if not args.skip_source_pretrain:
+        best_model, _ = model_train(
+            s_tra_data,
+            s_val_data,
+            s_test_data,
+            t_tra_data,
+            rec_diffu_joint_model,
+            args,
+            logger,
+            pretrain_flag
+        )
+
+        torch.save(
+            best_model.state_dict(),
+            source_checkpoint
+        )
+
+    # Load fixed source checkpoint
+    rec_diffu_joint_model.load_state_dict(
+        torch.load(
+            source_checkpoint,
+            map_location=args.device
+        )
+    )
+
+    # ==============================
+    # Stage 2: Target Training
+    # ==============================
+
     args.item_num = target_item_num
     args.eval_interval = 1
     args.patience = 5
+
     pretrain_flag = False
-    best_model, test_results = model_train(t_tra_data, t_val_data, t_test_data, None, rec_diffu_joint_model, args, logger, pretrain_flag)
+    # Fixed Target Training Random Seed
+    fix_random_seed_as(args.random_seed + 1)
+    best_model, test_results = model_train(
+        t_tra_data,
+        t_val_data,
+        t_test_data,
+        None,
+        rec_diffu_joint_model,
+        args,
+        logger,
+        pretrain_flag,
+        reward_data=t_reward_data
+    )
+
     target_model_path = (
         "./saved_model/"
         + args.s_dataset
