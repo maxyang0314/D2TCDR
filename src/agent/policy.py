@@ -35,6 +35,21 @@ class DebiasAgent(nn.Module):
             )
         )
 
+        # Action D: History-aware Fusion Beta
+        self.fusion_encoder = nn.Sequential(
+            nn.Linear(2, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU()
+        )
+
+        self.beta_head = nn.Linear(hidden_dim, 5)
+
+        self.register_buffer(
+            "beta_options",
+            torch.tensor([0.0, 0.25, 0.5, 0.75, 1.0])
+        )
+
     def forward(self, states):
 
         features = self.encoder(states)
@@ -50,7 +65,29 @@ class DebiasAgent(nn.Module):
 
         return selection_logits, weight_logits
 
+    def choose_beta(self, fusion_states, training=True):
+        """
+        fusion_states: [N, 2]
+        return:
+            betas: [N]
+            log_probs: [N] or None
+            indices: [N]
+        """
+        features = self.fusion_encoder(fusion_states)
+        logits = self.beta_head(features)
 
+        if training:
+            distribution = Categorical(logits=logits)
+            indices = distribution.sample()
+            log_probs = distribution.log_prob(indices)
+        else:
+            indices = logits.argmax(dim=-1)
+            log_probs = None
+
+        betas = self.beta_options[indices]
+
+        return betas, log_probs, indices
+    
 def sample_actions(
     agent,
     states,

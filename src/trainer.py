@@ -30,6 +30,12 @@ from agent.b3 import (
     augment_selected_b3
 )
 
+from agent.fusion import (
+    make_popular_lookup,
+    evaluate_fusion_reward,
+    fused_ranking_scores
+)
+
 def optimizers(model, args):
     if args.optimizer.lower() == 'adam':
         return optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
@@ -237,7 +243,7 @@ def hrs_and_ndcgs_k(scores, labels, ks):
         metrics['NDCG@%d' % k] = ndcg_temp
     return metrics  
 
-def model_train(train_data, val_data, test_data, con_data, model_joint, args, logger, pretrain_flag, reward_data=None):
+def model_train(train_data, val_data, test_data, con_data, model_joint, args, logger, pretrain_flag, reward_data=None, fusion_base_model=None):
     epochs = args.epochs
     device = args.device
     metric_ks = args.metric_ks
@@ -262,6 +268,18 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
         and args.agent_enabled == 1
     )
 
+    if use_agent:
+        if fusion_base_model is None:
+            raise ValueError(
+                "Fusion requires a frozen baseline model"
+            )
+
+        fusion_base_model = fusion_base_model.to(device)
+        fusion_base_model.eval()
+
+        for param in fusion_base_model.parameters():
+            param.requires_grad_(False)
+
     best_model = copy.deepcopy(model_joint)
     best_val_ndcg10 = float("-inf")
 
@@ -285,7 +303,12 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
         target_counter, max_frequency = (
             build_target_frequency(train_data)
         )
-
+        if use_agent:
+            fusion_popular_lookup = make_popular_lookup(
+                popular_items,
+                args.item_num,
+                device
+            )
         if reward_data is None or len(reward_data) == 0:
             raise ValueError(
                 "Target training requires Reward Set."
@@ -561,14 +584,20 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
 
             if use_agent and joint_log_prob is not None:
 
-                metrics = evaluate_reward(
-                    model_joint,
-                    reward_subset,
-                    args,
-                    popular_items,
-                    tail_items,
-                    epoch=epoch_temp,
-                    random_seed=args.random_seed + 707
+                metrics, beta_log_prob, beta_counts = (
+                    evaluate_fusion_reward(
+                        model_a=fusion_base_model,
+                        model_b=model_joint,
+                        agent=agent,
+                        reward_data=reward_subset,
+                        args=args,
+                        popular_items=popular_items,
+                        tail_items=tail_items,
+                        popular_lookup=fusion_popular_lookup,
+                        epoch=epoch_temp,
+                        random_seed=args.random_seed + 707,
+                        training=True
+                    )
                 )
 
                 reward = calculate_reward(
@@ -601,14 +630,36 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
 
                 agent_optimizer.zero_grad()
 
+                # B + C + D Joint Policy
+                total_log_prob = (
+                    joint_log_prob
+                    + beta_log_prob
+                )
+
                 policy_loss = (
-                    -advantage * joint_log_prob
+                    -advantage * total_log_prob
                 )
 
                 policy_loss.backward()
 
+                bc_params = (
+                    list(agent.encoder.parameters())
+                    + list(agent.selection_head.parameters())
+                    + list(agent.weight_head.parameters())
+                )
+
+                beta_params = (
+                    list(agent.fusion_encoder.parameters())
+                    + list(agent.beta_head.parameters())
+                )
+
                 grad_norm = torch.nn.utils.clip_grad_norm_(
-                    agent.parameters(),
+                    bc_params,
+                    max_norm=5.0
+                )
+
+                beta_grad_norm = torch.nn.utils.clip_grad_norm_(
+                    beta_params,
                     max_norm=5.0
                 )
 
@@ -623,8 +674,18 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                     .detach().clone()
                 )
 
+                beta_before = (
+                    agent.beta_head.weight
+                    .detach().clone()
+                )
+
                 # Update Agent
                 agent_optimizer.step()
+
+                beta_delta = (
+                    agent.beta_head.weight.detach()
+                    - beta_before
+                ).abs().max().item()
 
                 # Measure actual parameter changes
                 selection_delta = (
@@ -684,7 +745,7 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                         f"GradNorm={grad_norm.item():.6f}, "
                         f"Tail_HR@10={metrics['Tail_HR@10']:.4f}, "
                         f"Overall_HR@10={metrics['Overall_HR@10']:.4f}, "
-                        f"Popular_HR@10={metrics['Popular_HR@10']:.4f}"
+                        f"Popular_HR@10={metrics['Popular_HR@10']:.4f}, "
                         f"TailMeanHPR={tail_mean_hpr:.4f}, "
                         f"SelectedMeanHPR={selected_mean_hpr:.4f}, "
                         f"TailMeanF={tail_mean_f:.4f}, "
@@ -694,6 +755,9 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                         f"WeightDelta={weight_delta:.8f}, "
                         f"SelectionDelta={selection_delta:.8f}, "
                         f"WeightDelta={weight_delta:.8f}, "
+                        f"BetaCounts={beta_counts}, "
+                        f"BetaDelta={beta_delta:.8f}, "
+                        f"BetaGradNorm={float(beta_grad_norm):.6f}, "
                     )
 
                     print(message)
@@ -730,6 +794,9 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
             print('start predicting: ', datetime.datetime.now())
             logger.info('start predicting: {}'.format(datetime.datetime.now()))
             model_joint.eval()
+            if use_agent:
+                fusion_base_model.eval()
+                agent.eval()
             with torch.no_grad():
                 metrics_dict = {'HR@5': [], 'NDCG@5': [], 'HR@10': [], 'NDCG@10': [], 'HR@20': [], 'NDCG@20': []}
                 # metrics_dict_mean = {}
@@ -741,13 +808,62 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                     target = (torch.LongTensor(target)).unsqueeze(1)
                     seq = seq.to(device)
                     target = target.to(device)
-                    scores_rec, rep_diffu, _, _, _, _ , _ = model_joint(seq, target, None, pretrain_flag, args, epoch_temp, train_flag=False)
-                    scores_rec_diffu = model_joint.diffu_rep_pre(rep_diffu, pretrain_flag)    ### inner_production
-                    output = torch.full_like(scores_rec_diffu, -100.0)
-                    row_indices = torch.arange(args.batch_size).unsqueeze(1)
-                    negative_samples = list(batch['negative_samples'].values())
-                    output[row_indices, negative_samples] = scores_rec_diffu[row_indices, negative_samples]
-                    scores_rec_diffu = output
+                    negative_samples = torch.as_tensor(
+                        list(batch["negative_samples"].values()),
+                        dtype=torch.long,
+                        device=device
+                    )
+
+                    if use_agent:
+                        # Per-history Greedy Beta Fusion
+                        scores_rec_diffu, _ = (
+                            fused_ranking_scores(
+                                model_a=fusion_base_model,
+                                model_b=model_joint,
+                                agent=agent,
+                                seq=seq,
+                                candidates=negative_samples,
+                                popular_lookup=fusion_popular_lookup,
+                                args=args,
+                                epoch=epoch_temp
+                            )
+                        )
+
+                    else:
+                        # 原本 Source / Baseline 的評估
+                        _, rep_diffu, _, _, _, _, _ = (
+                            model_joint(
+                                seq,
+                                target,
+                                None,
+                                pretrain_flag,
+                                args,
+                                epoch_temp,
+                                train_flag=False
+                            )
+                        )
+
+                        original_scores = (
+                            model_joint.diffu_rep_pre(
+                                rep_diffu,
+                                pretrain_flag
+                            )
+                        )
+
+                        scores_rec_diffu = torch.full_like(
+                            original_scores,
+                            -100.0
+                        )
+
+                        selected_scores = original_scores.gather(
+                            1, negative_samples
+                        )
+
+                        scores_rec_diffu.scatter_(
+                            1,
+                            negative_samples,
+                            selected_scores
+                        )
                     metrics = hrs_and_ndcgs_k(scores_rec_diffu, target, metric_ks)
                     for k, v in metrics.items():
                         metrics_dict[k].append(v)
@@ -840,7 +956,12 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
             )
 
     best_model.eval()
+    if use_agent:
+        agent.load_state_dict(best_agent_state)
+        agent.eval()
+        fusion_base_model.eval()
 
+        print("Best Fusion Policy Restored")
     # ==============================
     # Save Agent Policy
     # ==============================
@@ -874,14 +995,26 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
 
     if not pretrain_flag:
 
-        reward_metrics = evaluate_reward(
-            best_model,
-            reward_subset,
-            args,
-            popular_items,
-            tail_items,
-            random_seed=args.random_seed + 707
-        )
+        if use_agent:
+            reward_metrics, _, beta_counts = (
+                evaluate_fusion_reward(
+                    model_a=fusion_base_model,
+                    model_b=best_model,
+                    agent=agent,
+                    reward_data=reward_subset,
+                    args=args,
+                    popular_items=popular_items,
+                    tail_items=tail_items,
+                    popular_lookup=fusion_popular_lookup,
+                    random_seed=args.random_seed + 707,
+                    training=False
+                )
+            )
+
+            print(
+                "Reward Beta Distribution:",
+                beta_counts
+            )
 
         print(
             "REWARD_SET_RESULTS:",
@@ -895,7 +1028,10 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
 
     
     top_100_item = []
-
+    if use_agent:
+        beta_test_counts = torch.zeros(
+            5, dtype=torch.long
+        )
     with torch.no_grad():
         # ============================================
         # 1. 初始化 Overall / Popular / Unpopular 指標
@@ -1033,49 +1169,66 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                 .to(device)
             )
 
-            scores_rec, rep_diffu, _, _, _, _, _ = best_model(
-                seq,
-                target,
-                None,
-                pretrain_flag,
-                args,
-                0.2,
-                train_flag=False
-            )
-
-            scores_rec_diffu = best_model.diffu_rep_pre(
-                rep_diffu,
-                pretrain_flag
-            )
-
-            # ============================================
-            # 2. 保留原本 1 positive + 100 negatives 的設定
-            # ============================================
-            output = torch.full_like(
-                scores_rec_diffu,
-                -100.0
-            )
-
-            row_indices = torch.arange(
-                current_batch_size,
-                device=device
-            ).unsqueeze(1)
-
             negative_samples = torch.as_tensor(
                 negative_samples_list,
                 dtype=torch.long,
                 device=device
             )
 
-            output[
-                row_indices,
-                negative_samples
-            ] = scores_rec_diffu[
-                row_indices,
-                negative_samples
-            ]
+            if use_agent:
+                # 每筆 History 都有自己的 Beta
+                scores_rec_diffu, beta_indices = (
+                    fused_ranking_scores(
+                        model_a=fusion_base_model,
+                        model_b=best_model,
+                        agent=agent,
+                        seq=seq,
+                        candidates=negative_samples,
+                        popular_lookup=fusion_popular_lookup,
+                        args=args,
+                        epoch=0
+                    )
+                )
 
-            scores_rec_diffu = output
+                beta_test_counts += torch.bincount(
+                    beta_indices.detach().cpu(),
+                    minlength=5
+                )
+
+            else:
+                # 保留原本 Source/Baseline Test
+                _, rep_diffu, _, _, _, _, _ = (
+                    best_model(
+                        seq,
+                        target,
+                        None,
+                        pretrain_flag,
+                        args,
+                        0.2,
+                        train_flag=False
+                    )
+                )
+
+                original_scores = best_model.diffu_rep_pre(
+                    rep_diffu,
+                    pretrain_flag
+                )
+
+                scores_rec_diffu = torch.full_like(
+                    original_scores,
+                    -100.0
+                )
+
+                selected_scores = original_scores.gather(
+                    1,
+                    negative_samples
+                )
+
+                scores_rec_diffu.scatter_(
+                    1,
+                    negative_samples,
+                    selected_scores
+                )
 
             # 儲存 Top-100，保留原本功能
             top_100_k = min(
@@ -1261,7 +1414,16 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                 total_recommend_count[k] += (
                     current_batch_size * k
                 )
+        if use_agent:
+            print(
+                "TEST_BETA_DISTRIBUTION:",
+                beta_test_counts.tolist()
+            )
 
+            logger.info(
+                "TEST_BETA_DISTRIBUTION: %s",
+                beta_test_counts.tolist()
+            )
         # ============================================
         # 6. 計算最終結果
         # ============================================
