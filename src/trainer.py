@@ -5,6 +5,7 @@ import torch
 import numpy as np
 import pandas as pd
 import copy
+import random
 
 from collections import Counter
 
@@ -22,6 +23,11 @@ from agent.reward import (
     RewardBaseline,
     calculate_reward,
     evaluate_reward
+)
+
+from agent.b3 import (
+    build_b3_candidates,
+    augment_selected_b3
 )
 
 def optimizers(model, args):
@@ -293,6 +299,26 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
             reward_subset = reward_data.copy()
 
     if use_agent:
+        # B3：只統計未擴增的 Target Training Set
+        b3_candidates = build_b3_candidates(
+            train_data,
+            min_cooccurrence=2
+        )
+
+        # 使用獨立 RNG，避免影響 Torch Policy Sampling
+        b3_rng = random.Random(
+            args.random_seed + 2000
+        )
+
+        print(
+            "B3 Candidate Items:",
+            len(b3_candidates)
+        )
+
+        logger.info(
+            "B3 Candidate Items: %d",
+            len(b3_candidates)
+        )
 
         agent = DebiasAgent(
             hidden_dim=args.agent_hidden
@@ -319,6 +345,14 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
     for epoch_temp in range(epochs):
 
         model_joint.train()
+        if use_agent:
+            epoch_b3_stats = {
+                "copies": 0,
+                "replaced": 0,
+                "too_short": 0,
+                "no_older_popular": 0,
+                "no_candidate": 0
+            }
         epoch_train_data = train_data.sample(
             frac=1.0,
             random_state=args.random_seed + epoch_temp
@@ -368,21 +402,37 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                     budget_ratio=args.agent_budget_ratio
                 )
 
-                # Action B: Duplicate Samples
+                # Action B: History Augmentation
                 if duplicate_idx.numel() > 0:
 
-                    duplicate_positions = (
+                    selected_positions = (
                         duplicate_idx.detach()
                         .cpu()
                         .tolist()
                     )
 
-                    duplicate_rows = batch_df.iloc[
-                        duplicate_positions
+                    # 取得 Agent 選中的 Tail Samples
+                    selected_rows = batch_df.iloc[
+                        selected_positions
                     ].copy()
 
+                    # 每份副本都執行 B3 規則
+                    b3_rows, b3_stats = augment_selected_b3(
+                        duplicate_rows=selected_rows,
+                        popular_items=popular_items,
+                        candidates=b3_candidates,
+                        rng=b3_rng,
+                        preserve_recent=2,
+                        replacement_topk=10
+                    )
+
+                    # 累積 B3 統計
+                    for key, value in b3_stats.items():
+                        epoch_b3_stats[key] += value
+
+                    # 原始 Batch 保留，加入 B3 副本
                     batch_df = pd.concat(
-                        [batch_df, duplicate_rows],
+                        [batch_df, b3_rows],
                         ignore_index=True
                     )
 
@@ -648,7 +698,27 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
 
                     print(message)
                     logger.info(message)
+        # B3 Epoch Statistics
+        if use_agent:
+            total = epoch_b3_stats["copies"]
+            replaced = epoch_b3_stats["replaced"]
 
+            rate = replaced / total if total > 0 else 0.0
+
+            b3_message = (
+                f"B3 Epoch={epoch_temp}, "
+                f"Copies={total}, "
+                f"Replaced={replaced}, "
+                f"ReplacementRate={rate:.2%}, "
+                f"TooShort={epoch_b3_stats['too_short']}, "
+                f"NoOlderPopular="
+                f"{epoch_b3_stats['no_older_popular']}, "
+                f"NoCandidate="
+                f"{epoch_b3_stats['no_candidate']}"
+            )
+
+            print(b3_message)
+            logger.info(b3_message)
         print('Epoch: {}'.format(epoch_temp))
         logger.info('Epoch: {}'.format(epoch_temp))
         lr_scheduler.step()
