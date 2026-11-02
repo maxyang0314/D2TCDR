@@ -916,6 +916,25 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                         agent.state_dict()
                     )
 
+                # Baseline：Validation 改善時立即保存
+                if not pretrain_flag and not use_agent:
+                    baseline_path = (
+                        "./saved_model/"
+                        + args.s_dataset + "_"
+                        + args.t_dataset
+                        + "/baseline_target_model.pth"
+                    )
+
+                    torch.save(
+                        best_model.state_dict(),
+                        baseline_path
+                    )
+
+                    print(
+                        "Baseline Checkpoint Saved:",
+                        baseline_path
+                    )
+
                 if pretrain_flag:
                     torch.save(
                         best_model.state_dict(),
@@ -996,6 +1015,7 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
     if not pretrain_flag:
 
         if use_agent:
+            # Agent V4：使用每筆 History 的 Beta 進行 Fusion
             reward_metrics, _, beta_counts = (
                 evaluate_fusion_reward(
                     model_a=fusion_base_model,
@@ -1014,6 +1034,17 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
             print(
                 "Reward Beta Distribution:",
                 beta_counts
+            )
+
+        else:
+            # Baseline：只評估原始 D2TCDR
+            reward_metrics = evaluate_reward(
+                best_model,
+                reward_subset,
+                args,
+                popular_items,
+                tail_items,
+                random_seed=args.random_seed + 707
             )
 
         print(
