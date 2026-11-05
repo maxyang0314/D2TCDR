@@ -535,12 +535,6 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                     max_norm=5.0
                 )
 
-                # Save parameters before update
-                selection_before = (
-                    agent.selection_head.weight
-                    .detach().clone()
-                )
-
                 weight_before = (
                     agent.weight_head.weight
                     .detach().clone()
@@ -548,12 +542,6 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
 
                 # Update Agent
                 agent_optimizer.step()
-
-                # Measure actual parameter changes
-                selection_delta = (
-                    agent.selection_head.weight.detach()
-                    - selection_before
-                ).abs().max().item()
 
                 weight_delta = (
                     agent.weight_head.weight.detach()
