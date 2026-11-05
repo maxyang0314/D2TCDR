@@ -3,9 +3,7 @@ import torch.optim as optim
 import datetime
 import torch
 import numpy as np
-import pandas as pd
 import copy
-import random
 
 from collections import Counter
 
@@ -23,11 +21,6 @@ from agent.reward import (
     RewardBaseline,
     calculate_reward,
     evaluate_reward
-)
-
-from agent.b3 import (
-    build_b3_candidates,
-    augment_selected_b3
 )
 
 def optimizers(model, args):
@@ -268,8 +261,6 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
     agent = None
     best_agent_state = None
 
-    budget_carry = 0.0
-
     if not pretrain_flag:
 
         (
@@ -299,26 +290,6 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
             reward_subset = reward_data.copy()
 
     if use_agent:
-        # B3：只統計未擴增的 Target Training Set
-        b3_candidates = build_b3_candidates(
-            train_data,
-            min_cooccurrence=2
-        )
-
-        # 使用獨立 RNG，避免影響 Torch Policy Sampling
-        b3_rng = random.Random(
-            args.random_seed + 2000
-        )
-
-        print(
-            "B3 Candidate Items:",
-            len(b3_candidates)
-        )
-
-        logger.info(
-            "B3 Candidate Items: %d",
-            len(b3_candidates)
-        )
 
         agent = DebiasAgent(
             hidden_dim=args.agent_hidden
@@ -369,82 +340,36 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
             ].copy().reset_index(drop=True)
 
             batch_weights = None
-            joint_log_prob = None
+            policy_log_prob = None
+            tail_alphas = None
 
             # ==============================
-            # Step 2: Agent Joint Action
+            # Step 2: Continuous Model C
             # ==============================
 
             if use_agent:
 
-                states, eligible_mask = (
-                    build_sample_states(
-                        batch_df,
-                        popular_items,
-                        tail_items,
-                        target_counter,
-                        max_frequency,
-                        device
-                    )
+                states, eligible_mask = build_sample_states(
+                    batch_df,
+                    popular_items,
+                    tail_items,
+                    target_counter,
+                    max_frequency,
+                    device
                 )
 
                 (
-                    duplicate_idx,
                     sample_weights,
-                    joint_log_prob,
-                    budget_carry,
-                    alpha_indices
+                    policy_log_prob,
+                    tail_alphas
                 ) = sample_actions(
                     agent,
                     states,
                     eligible_mask,
-                    budget_carry=budget_carry,
-                    budget_ratio=args.agent_budget_ratio
+                    training=True
                 )
 
-                # Action B: History Augmentation
-                if duplicate_idx.numel() > 0:
-
-                    selected_positions = (
-                        duplicate_idx.detach()
-                        .cpu()
-                        .tolist()
-                    )
-
-                    # 取得 Agent 選中的 Tail Samples
-                    selected_rows = batch_df.iloc[
-                        selected_positions
-                    ].copy()
-
-                    # 每份副本都執行 B3 規則
-                    b3_rows, b3_stats = augment_selected_b3(
-                        duplicate_rows=selected_rows,
-                        popular_items=popular_items,
-                        candidates=b3_candidates,
-                        rng=b3_rng,
-                        preserve_recent=2,
-                        replacement_topk=10
-                    )
-
-                    # 累積 B3 統計
-                    for key, value in b3_stats.items():
-                        epoch_b3_stats[key] += value
-
-                    # 原始 Batch 保留，加入 B3 副本
-                    batch_df = pd.concat(
-                        [batch_df, b3_rows],
-                        ignore_index=True
-                    )
-
-                # Action C: Weights
-                # Duplicates inherit original weights
-                batch_weights = torch.cat(
-                    [
-                        sample_weights,
-                        sample_weights[duplicate_idx]
-                    ]
-                ).detach()
-
+                batch_weights = sample_weights.detach()
             # ==============================
             # Step 3: Build Tensors
             # ==============================
@@ -559,7 +484,7 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
             # Step 8: Reward Evaluation
             # ==============================
 
-            if use_agent and joint_log_prob is not None:
+            if use_agent and policy_log_prob is not None:
 
                 metrics = evaluate_reward(
                     model_joint,
@@ -601,9 +526,7 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
 
                 agent_optimizer.zero_grad()
 
-                policy_loss = (
-                    -advantage * joint_log_prob
-                )
+                policy_loss = -advantage * policy_log_prob
 
                 policy_loss.backward()
 
@@ -644,39 +567,25 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                 # ==============================
 
                 if j < 5 or (j + 1) % 5 == 0:
-                    
-                    # Action B: State Distribution
+
                     tail_states = states[eligible_mask]
-                    selected_states = states[duplicate_idx]
+
+                    alpha_mean = tail_alphas.mean().item()
+                    alpha_min = tail_alphas.min().item()
+                    alpha_max = tail_alphas.max().item()
+                    alpha_std = tail_alphas.std(unbiased=False).item()
 
                     tail_mean_hpr = tail_states[:, 0].mean().item()
                     tail_mean_f = tail_states[:, 1].mean().item()
 
-                    if len(selected_states) > 0:
-                        selected_mean_hpr = (
-                            selected_states[:, 0].mean().item()
-                        )
-                        selected_mean_f = (
-                            selected_states[:, 1].mean().item()
-                        )
-                    else:
-                        selected_mean_hpr = float("nan")
-                        selected_mean_f = float("nan")
-
-                    # Action C: Alpha Distribution
-                    alpha_counts = torch.bincount(
-                        alpha_indices,
-                        minlength=4
-                    ).cpu().tolist()
-
-                    tail_count = eligible_mask.sum().item()
-                    duplicate_count = duplicate_idx.numel()
-
                     message = (
                         f"Epoch={epoch_temp}, "
                         f"Batch={j + 1}, "
-                        f"TailSamples={tail_count}, "
-                        f"Oversampled={duplicate_count}, "
+                        f"TailSamples={tail_alphas.numel()}, "
+                        f"AlphaMean={alpha_mean:.4f}, "
+                        f"AlphaMin={alpha_min:.4f}, "
+                        f"AlphaMax={alpha_max:.4f}, "
+                        f"AlphaStd={alpha_std:.4f}, "
                         f"WeightMax={batch_weights.max().item():.4f}, "
                         f"Reward={reward:.6f}, "
                         f"Advantage={advantage:.6f}, "
@@ -684,16 +593,10 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                         f"GradNorm={grad_norm.item():.6f}, "
                         f"Tail_HR@10={metrics['Tail_HR@10']:.4f}, "
                         f"Overall_HR@10={metrics['Overall_HR@10']:.4f}, "
-                        f"Popular_HR@10={metrics['Popular_HR@10']:.4f}"
+                        f"Popular_HR@10={metrics['Popular_HR@10']:.4f}, "
                         f"TailMeanHPR={tail_mean_hpr:.4f}, "
-                        f"SelectedMeanHPR={selected_mean_hpr:.4f}, "
                         f"TailMeanF={tail_mean_f:.4f}, "
-                        f"SelectedMeanF={selected_mean_f:.4f}, "
-                        f"AlphaCounts={alpha_counts}, "
-                        f"SelectionDelta={selection_delta:.8f}, "
-                        f"WeightDelta={weight_delta:.8f}, "
-                        f"SelectionDelta={selection_delta:.8f}, "
-                        f"WeightDelta={weight_delta:.8f}, "
+                        f"WeightDelta={weight_delta:.8f}"
                     )
 
                     print(message)
