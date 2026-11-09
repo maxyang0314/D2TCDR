@@ -23,6 +23,11 @@ from agent.reward import (
     evaluate_reward
 )
 
+from agent.soft_label import (
+    build_tail_neighbors,
+    build_neighbor_batch
+)
+
 def optimizers(model, args):
     if args.optimizer.lower() == 'adam':
         return optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
@@ -291,6 +296,32 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
 
     if use_agent:
 
+         # Build related Tail items once
+        neighbor_map, neighbor_quality = (
+            build_tail_neighbors(
+                train_data,
+                tail_items,
+                top_k=args.soft_label_top_k,
+                min_cooccurrence=args.soft_label_min_cooccurrence
+            )
+        )
+
+        # Count eligible training samples
+        eligible_count = sum(
+            int(target) in neighbor_map
+            for target in train_data["next"]
+        )
+
+        print("Soft Label Neighbor Graph")
+        print("Tail items with neighbors:", len(neighbor_map))
+        print("Eligible samples:", eligible_count)
+        print("Total training samples:", len(train_data))
+
+        if eligible_count == 0:
+            raise ValueError(
+                "No eligible Soft Label samples. "
+                "Check min_cooccurrence and neighbor coverage."
+            )
         agent = DebiasAgent(
             hidden_dim=args.agent_hidden
         ).to(device)
@@ -316,14 +347,6 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
     for epoch_temp in range(epochs):
 
         model_joint.train()
-        if use_agent:
-            epoch_b3_stats = {
-                "copies": 0,
-                "replaced": 0,
-                "too_short": 0,
-                "no_older_popular": 0,
-                "no_candidate": 0
-            }
         epoch_train_data = train_data.sample(
             frac=1.0,
             random_state=args.random_seed + epoch_temp
@@ -339,14 +362,15 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                 (j + 1) * args.batch_size
             ].copy().reset_index(drop=True)
 
-            batch_weights = None
+            batch_etas = None
             policy_log_prob = None
-            tail_alphas = None
+            tail_etas = None
+            neighbor_ids = None
+            neighbor_probs = None
 
             # ==============================
-            # Step 2: Continuous Model C
+            # Step 2: Soft Label Agent Action
             # ==============================
-
             if use_agent:
 
                 states, eligible_mask = build_sample_states(
@@ -355,21 +379,35 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                     tail_items,
                     target_counter,
                     max_frequency,
+                    neighbor_quality,
                     device
                 )
 
                 (
-                    sample_weights,
+                    sample_etas,
                     policy_log_prob,
-                    tail_alphas
+                    tail_etas
                 ) = sample_actions(
                     agent,
                     states,
                     eligible_mask,
+                    max_eta=args.soft_label_max_eta,
                     training=True
                 )
 
-                batch_weights = sample_weights.detach()
+                # No supervised gradient directly to Agent
+                batch_etas = sample_etas.detach()
+
+                # Build sparse Soft Label targets
+                neighbor_ids, neighbor_probs = (
+                    build_neighbor_batch(
+                        batch_df["next"],
+                        neighbor_map,
+                        args.soft_label_top_k,
+                        device
+                    )
+                )
+
             # ==============================
             # Step 3: Build Tensors
             # ==============================
@@ -432,33 +470,25 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
             # ==============================
             # Step 6: Recommendation Loss
             # ==============================
-
             if use_agent:
 
-                ce_per_sample = (
-                    model_joint.loss_diffu_ce_per_sample(
+                # Method 1: Target-aware Soft Label
+                soft_ce_per_sample = (
+                    model_joint.loss_soft_label_per_sample(
                         diffu_rep,
                         target,
-                        pretrain_flag=False
+                        neighbor_ids,
+                        neighbor_probs,
+                        batch_etas
                     )
                 )
 
-                assert (
-                    ce_per_sample.numel()
-                    == batch_weights.numel()
-                )
-
-                weighted_ce = (
-                    ce_per_sample * batch_weights
-                )
-
                 loss_diffu_value = (
-                    weighted_ce.sum()
-                    / ce_per_sample.numel()
+                    soft_ce_per_sample.mean()
                 )
 
             else:
-
+                # Original D2TCDR loss
                 loss_diffu_value = (
                     model_joint.loss_diffu_ce(
                         diffu_rep,
@@ -472,6 +502,7 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                 loss_diffu_value
                 + em_loss * args.loss_lambda
             )
+
 
             # ==============================
             # Step 7: Update D2TCDR
@@ -540,6 +571,20 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                     .detach().clone()
                 )
 
+                agent_optimizer.step()
+
+                strength_before = (
+                    agent.strength_head.weight
+                    .detach().clone()
+                )
+
+                agent_optimizer.step()
+
+                strength_delta = (
+                    agent.strength_head.weight.detach()
+                    - strength_before
+                ).abs().max().item()
+
                 # Update Agent
                 agent_optimizer.step()
 
@@ -558,23 +603,31 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
 
                     tail_states = states[eligible_mask]
 
-                    alpha_mean = tail_alphas.mean().item()
-                    alpha_min = tail_alphas.min().item()
-                    alpha_max = tail_alphas.max().item()
-                    alpha_std = tail_alphas.std(unbiased=False).item()
+                    eta_mean = tail_etas.mean().item()
+                    eta_min = tail_etas.min().item()
+                    eta_max = tail_etas.max().item()
+                    eta_std = tail_etas.std(
+                        unbiased=False
+                    ).item()
 
-                    tail_mean_hpr = tail_states[:, 0].mean().item()
-                    tail_mean_f = tail_states[:, 1].mean().item()
+                    tail_mean_hpr = (
+                        tail_states[:, 0].mean().item()
+                    )
+                    tail_mean_f = (
+                        tail_states[:, 1].mean().item()
+                    )
+                    tail_mean_nq = (
+                        tail_states[:, 2].mean().item()
+                    )
 
                     message = (
                         f"Epoch={epoch_temp}, "
                         f"Batch={j + 1}, "
-                        f"TailSamples={tail_alphas.numel()}, "
-                        f"AlphaMean={alpha_mean:.4f}, "
-                        f"AlphaMin={alpha_min:.4f}, "
-                        f"AlphaMax={alpha_max:.4f}, "
-                        f"AlphaStd={alpha_std:.4f}, "
-                        f"WeightMax={batch_weights.max().item():.4f}, "
+                        f"EligibleSamples={tail_etas.numel()}, "
+                        f"EtaMean={eta_mean:.4f}, "
+                        f"EtaMin={eta_min:.4f}, "
+                        f"EtaMax={eta_max:.4f}, "
+                        f"EtaStd={eta_std:.4f}, "
                         f"Reward={reward:.6f}, "
                         f"Advantage={advantage:.6f}, "
                         f"PolicyLoss={policy_loss.item():.6f}, "
@@ -584,32 +637,12 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                         f"Popular_HR@10={metrics['Popular_HR@10']:.4f}, "
                         f"TailMeanHPR={tail_mean_hpr:.4f}, "
                         f"TailMeanF={tail_mean_f:.4f}, "
-                        f"WeightDelta={weight_delta:.8f}"
+                        f"TailMeanNQ={tail_mean_nq:.4f}, "
+                        f"StrengthDelta={strength_delta:.8f}"
                     )
 
                     print(message)
                     logger.info(message)
-        # B3 Epoch Statistics
-        if use_agent:
-            total = epoch_b3_stats["copies"]
-            replaced = epoch_b3_stats["replaced"]
-
-            rate = replaced / total if total > 0 else 0.0
-
-            b3_message = (
-                f"B3 Epoch={epoch_temp}, "
-                f"Copies={total}, "
-                f"Replaced={replaced}, "
-                f"ReplacementRate={rate:.2%}, "
-                f"TooShort={epoch_b3_stats['too_short']}, "
-                f"NoOlderPopular="
-                f"{epoch_b3_stats['no_older_popular']}, "
-                f"NoCandidate="
-                f"{epoch_b3_stats['no_candidate']}"
-            )
-
-            print(b3_message)
-            logger.info(b3_message)
         print('Epoch: {}'.format(epoch_temp))
         logger.info('Epoch: {}'.format(epoch_temp))
         lr_scheduler.step()

@@ -6,9 +6,8 @@ import torch
 
 def build_target_frequency(train_data):
     """
-    Count target frequency from training next items only.
+    Count target frequency from training next items.
     """
-
     counter = Counter(
         int(item)
         for item in train_data["next"]
@@ -18,9 +17,7 @@ def build_target_frequency(train_data):
     if not counter:
         raise ValueError("Training targets are empty.")
 
-    max_frequency = max(counter.values())
-
-    return counter, max_frequency
+    return counter, max(counter.values())
 
 
 def build_sample_states(
@@ -29,19 +26,19 @@ def build_sample_states(
     tail_items,
     target_counter,
     max_frequency,
+    neighbor_quality,
     device
 ):
     """
     State:
-        [Historical Popular Ratio,
-         Normalized Target Frequency]
+        [HPR, Normalized Target Frequency, NQ]
 
     Eligible:
-        target item belongs to Tail.
+        Tail-next with valid Tail neighbors.
     """
-
     hpr_values = []
     frequency_values = []
+    quality_values = []
     eligible_values = []
 
     denominator = math.log1p(max_frequency)
@@ -58,7 +55,7 @@ def build_sample_states(
             if int(item) != 0
         ]
 
-        # State 1: HPR
+        # State 1: Historical Popular Ratio
         if valid_history:
             hpr = sum(
                 item in popular_items
@@ -68,24 +65,34 @@ def build_sample_states(
             hpr = 0.0
 
         # State 2: Normalized Target Frequency
-        target_frequency = target_counter.get(
-            target, 0
+        frequency = (
+            math.log1p(
+                target_counter.get(target, 0)
+            ) / denominator
         )
 
-        normalized_frequency = (
-            math.log1p(target_frequency)
-            / denominator
+        # State 3: Neighbor Quality
+        quality = neighbor_quality.get(
+            target, 0.0
         )
 
-        # Tail-next Eligibility
-        eligible = target in tail_items
+        # Soft Label eligibility
+        eligible = (
+            target in tail_items
+            and target in neighbor_quality
+        )
 
         hpr_values.append(hpr)
-        frequency_values.append(normalized_frequency)
+        frequency_values.append(frequency)
+        quality_values.append(quality)
         eligible_values.append(eligible)
 
     states = torch.tensor(
-        list(zip(hpr_values, frequency_values)),
+        list(zip(
+            hpr_values,
+            frequency_values,
+            quality_values
+        )),
         dtype=torch.float32,
         device=device
     )

@@ -41,6 +41,26 @@ parser.add_argument('--agent_enabled', type=int, default=0, choices=[0, 1])
 parser.add_argument('--agent_lr', type=float, default=0.0001)
 parser.add_argument('--agent_hidden', type=int, default=32)
 # ==============================
+# Target-aware Soft Label Settings
+# ==============================
+parser.add_argument(
+    '--soft_label_top_k',
+    type=int,
+    default=5
+)
+
+parser.add_argument(
+    '--soft_label_min_cooccurrence',
+    type=int,
+    default=2
+)
+
+parser.add_argument(
+    '--soft_label_max_eta',
+    type=float,
+    default=0.3
+)
+# ==============================
 # Reward Settings
 # ==============================
 parser.add_argument('--reward_holdout_ratio', type=float, default=0.10)
@@ -53,7 +73,6 @@ parser.add_argument('--reward_epsilon_overall', type=float, default=0.002)
 parser.add_argument('--reward_epsilon_popular', type=float, default=0.002)
 parser.add_argument('--reward_baseline_window', type=int, default=50)
 parser.add_argument('--skip_source_pretrain', action='store_true')
-parser.add_argument('--fusion_baseline_checkpoint', type=str, default='./saved_model/movie_video/baseline_target_model.pth')
 parser.add_argument('--optimizer', type=str, default='Adam', choices=['SGD', 'Adam'])
 parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
 parser.add_argument('--loss_lambda', type=float, default=1, help='loss weight for diffusion')
@@ -284,39 +303,6 @@ def main(args):
     args.patience = 5
 
     pretrain_flag = False
-    # =====================================
-    # Model A: Frozen Target Baseline
-    # =====================================
-    fusion_base_model = None
-
-    if args.agent_enabled == 1:
-
-        baseline_path = args.fusion_baseline_checkpoint
-
-        if not os.path.isfile(baseline_path):
-            raise FileNotFoundError(
-                f"Baseline checkpoint not found: {baseline_path}"
-            )
-
-        fusion_base_model = Att_Diffuse_model(
-            create_model_diffu(args),
-            args
-        ).to(args.device)
-
-        fusion_base_model.load_state_dict(
-            torch.load(
-                baseline_path,
-                map_location=args.device,
-                weights_only=True
-            )
-        )
-
-        fusion_base_model.eval()
-
-        for param in fusion_base_model.parameters():
-            param.requires_grad_(False)
-
-        print("Frozen Model A:", baseline_path)
 
     # Fixed Target Training Random Seed
     fix_random_seed_as(args.random_seed + 1)
