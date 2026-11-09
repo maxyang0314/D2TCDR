@@ -81,63 +81,63 @@ class Att_Diffuse_model(nn.Module):
         return ce_per_sample
 
     
-def loss_soft_label_per_sample(
-    self,
-    rep_diffu,
-    labels,
-    neighbor_ids,
-    neighbor_probs,
-    etas
-):
-    """
-    Target-aware Soft Label CE.
-
-    Hard loss:
-        CE(prediction, target)
-
-    Soft loss:
-        Weighted CE over related Tail items
-
-    Final loss:
-        (1 - eta) * hard_ce + eta * soft_ce
-    """
-
-    # [B, num_items]
-    scores = self.diffu_rep_pre(
+    def loss_soft_label_per_sample(
+        self,
         rep_diffu,
-        pretrain_flag=False
-    )
+        labels,
+        neighbor_ids,
+        neighbor_probs,
+        etas
+    ):
+        """
+        Target-aware Soft Label CE.
 
-    log_probs = F.log_softmax(
-        scores,
-        dim=-1
-    )
+        Hard loss:
+            CE(prediction, target)
 
-    # 1. Original hard-target loss
-    hard_ce = F.nll_loss(
-        log_probs,
-        labels.view(-1),
-        reduction="none"
-    )
+        Soft loss:
+            Weighted CE over related Tail items
 
-    # 2. Related Tail item log probabilities
-    neighbor_log_probs = log_probs.gather(
-        dim=1,
-        index=neighbor_ids
-    )
+        Final loss:
+            (1 - eta) * hard_ce + eta * soft_ce
+        """
 
-    # 3. Soft-target loss
-    soft_ce = -(
-        neighbor_probs * neighbor_log_probs
-    ).sum(dim=1)
+        # [B, num_items]
+        scores = self.diffu_rep_pre(
+            rep_diffu,
+            pretrain_flag=False
+        )
 
-    # 4. Per-sample interpolation
-    loss_per_sample = (
-        (1.0 - etas) * hard_ce
-        + etas * soft_ce
-    )
+        log_probs = F.log_softmax(
+            scores,
+            dim=-1
+        )
 
-    return loss_per_sample
+        # 1. Original hard-target loss
+        hard_ce = F.nll_loss(
+            log_probs,
+            labels.view(-1),
+            reduction="none"
+        )
+
+        # 2. Related Tail item log probabilities
+        neighbor_log_probs = log_probs.gather(
+            dim=1,
+            index=neighbor_ids
+        )
+
+        # 3. Soft-target loss
+        soft_ce = -(
+            neighbor_probs * neighbor_log_probs
+        ).sum(dim=1)
+
+        # 4. Per-sample interpolation
+        loss_per_sample = (
+            (1.0 - etas) * hard_ce
+            + etas * soft_ce
+        )
+
+        return loss_per_sample
 
     def diffu_rep_pre(self, rep_diffu, pretrain_flag):
         if pretrain_flag:

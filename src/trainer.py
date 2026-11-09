@@ -566,13 +566,6 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                     max_norm=5.0
                 )
 
-                weight_before = (
-                    agent.weight_head.weight
-                    .detach().clone()
-                )
-
-                agent_optimizer.step()
-
                 strength_before = (
                     agent.strength_head.weight
                     .detach().clone()
@@ -583,14 +576,6 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                 strength_delta = (
                     agent.strength_head.weight.detach()
                     - strength_before
-                ).abs().max().item()
-
-                # Update Agent
-                agent_optimizer.step()
-
-                weight_delta = (
-                    agent.weight_head.weight.detach()
-                    - weight_before
                 ).abs().max().item()
 
                 reward_baseline.update(reward)
