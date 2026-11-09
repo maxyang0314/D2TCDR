@@ -329,8 +329,7 @@ def main(args):
         args,
         logger,
         pretrain_flag,
-        reward_data=t_reward_data,
-        fusion_base_model=fusion_base_model
+        reward_data=t_reward_data
     )
 
     target_model_path = (
