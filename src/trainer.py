@@ -23,6 +23,11 @@ from agent.reward import (
     evaluate_reward
 )
 
+from agent.soft_label import (
+    build_tail_neighbors,
+    build_neighbor_batch
+)
+
 def optimizers(model, args):
     if args.optimizer.lower() == 'adam':
         return optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
@@ -290,6 +295,27 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
             reward_subset = reward_data.copy()
 
     if use_agent:
+        
+        neighbor_map, neighbor_quality = (
+            build_tail_neighbors(
+                train_data,
+                tail_items,
+                top_k=args.soft_label_top_k,
+                min_cooccurrence=(
+                    args.soft_label_min_cooccurrence
+                )
+            )
+        )
+
+        available_samples = sum(
+            int(item) in neighbor_map
+            for item in train_data["next"]
+        )
+
+        print("Soft Label Neighbor Graph")
+        print("Items with neighbors:", len(neighbor_map))
+        print("Soft available samples:", available_samples)
+        print("Total samples:", len(train_data))
 
         agent = DebiasAgent(
             hidden_dim=args.agent_hidden
@@ -317,12 +343,11 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
 
         model_joint.train()
         if use_agent:
-            epoch_b3_stats = {
-                "copies": 0,
-                "replaced": 0,
-                "too_short": 0,
-                "no_older_popular": 0,
-                "no_candidate": 0
+            epoch_method_counts = {
+                "tail": 0,
+                "soft_available": 0,
+                "reweight": 0,
+                "soft_label": 0
             }
         epoch_train_data = train_data.sample(
             frac=1.0,
@@ -339,13 +364,17 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                 (j + 1) * args.batch_size
             ].copy().reset_index(drop=True)
 
-            batch_weights = None
+            
+            # ==============================
+            # Step 2: Dual-Method Agent
+            # ==============================
+            method_ids = None
+            batch_alphas = None
+            batch_etas = None
             policy_log_prob = None
-            tail_alphas = None
 
-            # ==============================
-            # Step 2: Continuous Model C
-            # ==============================
+            neighbor_ids = None
+            neighbor_probs = None
 
             if use_agent:
 
@@ -355,21 +384,60 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                     tail_items,
                     target_counter,
                     max_frequency,
-                    device
+                    device,
+                    neighbor_quality=neighbor_quality
                 )
 
+                # Whether Method 1 is available
+                soft_available_mask = torch.tensor(
+                    [
+                        int(item) in neighbor_map
+                        for item in batch_df["next"]
+                    ],
+                    dtype=torch.bool,
+                    device=device
+                ) & eligible_mask
+
+                # Method + selected strength
                 (
-                    sample_weights,
-                    policy_log_prob,
-                    tail_alphas
+                    method_ids,
+                    batch_alphas,
+                    batch_etas,
+                    policy_log_prob
                 ) = sample_actions(
                     agent,
                     states,
                     eligible_mask,
+                    soft_available_mask,
+                    max_eta=args.soft_label_max_eta,
                     training=True
                 )
 
-                batch_weights = sample_weights.detach()
+                # Soft label neighbors
+                (
+                    neighbor_ids,
+                    neighbor_probs
+                ) = build_neighbor_batch(
+                    batch_df["next"],
+                    neighbor_map,
+                    args.soft_label_top_k,
+                    device
+                )
+
+                # Epoch Statistics
+                epoch_method_counts["tail"] += int(
+                    eligible_mask.sum().item()
+                )
+                epoch_method_counts["soft_available"] += int(
+                    soft_available_mask.sum().item()
+                )
+                epoch_method_counts["reweight"] += int(
+                    (method_ids == 0).sum().item()
+                )
+                epoch_method_counts["soft_label"] += int(
+                    (method_ids == 1).sum().item()
+                )
+
             # ==============================
             # Step 3: Build Tensors
             # ==============================
@@ -429,32 +497,46 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                 train_flag=True
             )  
             
+            
             # ==============================
             # Step 6: Recommendation Loss
             # ==============================
-
             if use_agent:
 
-                ce_per_sample = (
-                    model_joint.loss_diffu_ce_per_sample(
+                hard_ce, soft_ce = (
+                    model_joint.loss_dual_method_terms(
                         diffu_rep,
                         target,
-                        pretrain_flag=False
+                        neighbor_ids,
+                        neighbor_probs
                     )
                 )
 
-                assert (
-                    ce_per_sample.numel()
-                    == batch_weights.numel()
+                # Method 0: Original Reweighting
+                sample_weights = (
+                    1.0
+                    + batch_alphas * (1.0 - states[:, 1])
                 )
 
-                weighted_ce = (
-                    ce_per_sample * batch_weights
+                reweighted_ce = (
+                    hard_ce * sample_weights
+                )
+
+                # Method 1: Target-aware Soft Label
+                soft_label_ce = (
+                    (1.0 - batch_etas) * hard_ce
+                    + batch_etas * soft_ce
+                )
+
+                # Apply selected method per sample
+                loss_per_sample = torch.where(
+                    method_ids == 1,
+                    soft_label_ce,
+                    reweighted_ce
                 )
 
                 loss_diffu_value = (
-                    weighted_ce.sum()
-                    / ce_per_sample.numel()
+                    loss_per_sample.mean()
                 )
 
             else:
@@ -467,11 +549,12 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                     )
                 )
 
-            # Preserve Original Auxiliary Loss
+            # Original Auxiliary Loss
             loss_all = (
                 loss_diffu_value
                 + em_loss * args.loss_lambda
             )
+
 
             # ==============================
             # Step 7: Update D2TCDR
@@ -535,46 +618,91 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                     max_norm=5.0
                 )
 
-                weight_before = (
-                    agent.weight_head.weight
-                    .detach().clone()
+                
+                # Track three heads before update
+                method_before = (
+                    agent.method_head.weight.detach().clone()
                 )
 
-                # Update Agent
+                weight_before = (
+                    agent.weight_head.weight.detach().clone()
+                )
+
+                soft_before = (
+                    agent.soft_label_head.weight.detach().clone()
+                )
+
+                # Update Agent once
                 agent_optimizer.step()
+
+                # Parameter changes
+                method_delta = (
+                    agent.method_head.weight.detach()
+                    - method_before
+                ).abs().max().item()
 
                 weight_delta = (
                     agent.weight_head.weight.detach()
                     - weight_before
                 ).abs().max().item()
 
+                soft_delta = (
+                    agent.soft_label_head.weight.detach()
+                    - soft_before
+                ).abs().max().item()
+
                 reward_baseline.update(reward)
-
+                
                 # ==============================
-                # Logging
+                # Dual-Method Logging
                 # ==============================
-
                 if j < 5 or (j + 1) % 5 == 0:
 
-                    tail_states = states[eligible_mask]
+                    rw_mask = method_ids == 0
+                    soft_mask = method_ids == 1
 
-                    alpha_mean = tail_alphas.mean().item()
-                    alpha_min = tail_alphas.min().item()
-                    alpha_max = tail_alphas.max().item()
-                    alpha_std = tail_alphas.std(unbiased=False).item()
+                    tail_count = int(
+                        eligible_mask.sum().item()
+                    )
+                    rw_count = int(
+                        rw_mask.sum().item()
+                    )
+                    soft_count = int(
+                        soft_mask.sum().item()
+                    )
+                    available_count = int(
+                        soft_available_mask.sum().item()
+                    )
 
-                    tail_mean_hpr = tail_states[:, 0].mean().item()
-                    tail_mean_f = tail_states[:, 1].mean().item()
+                    alpha_mean = (
+                        batch_alphas[rw_mask].mean().item()
+                        if rw_count > 0 else 0.0
+                    )
+                    eta_mean = (
+                        batch_etas[soft_mask].mean().item()
+                        if soft_count > 0 else 0.0
+                    )
+
+                    soft_rate = (
+                        soft_count / tail_count
+                        if tail_count > 0 else 0.0
+                    )
+                    soft_choice_rate = (
+                        soft_count / available_count
+                        if available_count > 0 else 0.0
+                    )
 
                     message = (
                         f"Epoch={epoch_temp}, "
                         f"Batch={j + 1}, "
-                        f"TailSamples={tail_alphas.numel()}, "
+                        f"TailSamples={tail_count}, "
+                        f"ReweightCount={rw_count}, "
+                        f"SoftLabelCount={soft_count}, "
+                        f"SoftAvailable={available_count}, "
+                        f"SoftLabelRate={soft_rate:.2%}, "
+                        f"SoftChoiceRate={soft_choice_rate:.2%}, "
                         f"AlphaMean={alpha_mean:.4f}, "
-                        f"AlphaMin={alpha_min:.4f}, "
-                        f"AlphaMax={alpha_max:.4f}, "
-                        f"AlphaStd={alpha_std:.4f}, "
-                        f"WeightMax={batch_weights.max().item():.4f}, "
+                        f"EtaMean={eta_mean:.4f}, "
                         f"Reward={reward:.6f}, "
                         f"Advantage={advantage:.6f}, "
                         f"PolicyLoss={policy_loss.item():.6f}, "
@@ -582,34 +710,37 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                         f"Tail_HR@10={metrics['Tail_HR@10']:.4f}, "
                         f"Overall_HR@10={metrics['Overall_HR@10']:.4f}, "
                         f"Popular_HR@10={metrics['Popular_HR@10']:.4f}, "
-                        f"TailMeanHPR={tail_mean_hpr:.4f}, "
-                        f"TailMeanF={tail_mean_f:.4f}, "
-                        f"WeightDelta={weight_delta:.8f}"
+                        f"MethodDelta={method_delta:.8f}, "
+                        f"WeightDelta={weight_delta:.8f}, "
+                        f"SoftDelta={soft_delta:.8f}"
                     )
 
                     print(message)
                     logger.info(message)
-        # B3 Epoch Statistics
+
+        
         if use_agent:
-            total = epoch_b3_stats["copies"]
-            replaced = epoch_b3_stats["replaced"]
+            counts = epoch_method_counts
 
-            rate = replaced / total if total > 0 else 0.0
+            available = counts["soft_available"]
 
-            b3_message = (
-                f"B3 Epoch={epoch_temp}, "
-                f"Copies={total}, "
-                f"Replaced={replaced}, "
-                f"ReplacementRate={rate:.2%}, "
-                f"TooShort={epoch_b3_stats['too_short']}, "
-                f"NoOlderPopular="
-                f"{epoch_b3_stats['no_older_popular']}, "
-                f"NoCandidate="
-                f"{epoch_b3_stats['no_candidate']}"
+            soft_choice_rate = (
+                counts["soft_label"] / available
+                if available > 0 else 0.0
             )
 
-            print(b3_message)
-            logger.info(b3_message)
+            summary = (
+                f"Method Epoch={epoch_temp}, "
+                f"TailSamples={counts['tail']}, "
+                f"Reweight={counts['reweight']}, "
+                f"SoftLabel={counts['soft_label']}, "
+                f"SoftAvailable={available}, "
+                f"SoftChoiceRate={soft_choice_rate:.2%}"
+            )
+
+            print(summary)
+            logger.info(summary)
+
         print('Epoch: {}'.format(epoch_temp))
         logger.info('Epoch: {}'.format(epoch_temp))
         lr_scheduler.step()
@@ -754,7 +885,7 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
 
         torch.save(
             best_agent_state,
-            model_dir + "/agent_policy.pth"
+            model_dir + "/agent_policy_dual_method.pth"
         )
 
         print("Agent Policy Saved")

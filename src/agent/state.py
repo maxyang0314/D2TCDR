@@ -29,19 +29,19 @@ def build_sample_states(
     tail_items,
     target_counter,
     max_frequency,
-    device
+    device,
+    neighbor_quality=None
 ):
     """
-    State:
-        [Historical Popular Ratio,
-         Normalized Target Frequency]
-
-    Eligible:
-        target item belongs to Tail.
+    State: [HPR, F, NQ]
+    Eligibility: all Tail-next samples
     """
+    if neighbor_quality is None:
+        neighbor_quality = {}
 
     hpr_values = []
     frequency_values = []
+    quality_values = []
     eligible_values = []
 
     denominator = math.log1p(max_frequency)
@@ -58,34 +58,35 @@ def build_sample_states(
             if int(item) != 0
         ]
 
-        # State 1: HPR
-        if valid_history:
-            hpr = sum(
-                item in popular_items
-                for item in valid_history
-            ) / len(valid_history)
-        else:
-            hpr = 0.0
-
-        # State 2: Normalized Target Frequency
-        target_frequency = target_counter.get(
-            target, 0
+        hpr = (
+            sum(item in popular_items
+                for item in valid_history)
+            / len(valid_history)
+            if valid_history else 0.0
         )
 
-        normalized_frequency = (
-            math.log1p(target_frequency)
+        frequency = (
+            math.log1p(target_counter.get(target, 0))
             / denominator
         )
 
-        # Tail-next Eligibility
-        eligible = target in tail_items
+        nq = neighbor_quality.get(target, 0.0)
 
         hpr_values.append(hpr)
-        frequency_values.append(normalized_frequency)
-        eligible_values.append(eligible)
+        frequency_values.append(frequency)
+        quality_values.append(nq)
+
+        # All Tail-next samples enter the Agent
+        eligible_values.append(
+            target in tail_items
+        )
 
     states = torch.tensor(
-        list(zip(hpr_values, frequency_values)),
+        list(zip(
+            hpr_values,
+            frequency_values,
+            quality_values
+        )),
         dtype=torch.float32,
         device=device
     )
@@ -97,3 +98,4 @@ def build_sample_states(
     )
 
     return states, eligible_mask
+

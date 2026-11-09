@@ -80,6 +80,46 @@ class Att_Diffuse_model(nn.Module):
 
         return ce_per_sample
 
+    def loss_dual_method_terms(
+        self,
+        rep_diffu,
+        labels,
+        neighbor_ids,
+        neighbor_probs
+    ):
+        """
+        Calculate per-sample Hard CE and Soft CE
+        using the same prediction scores.
+        """
+
+        scores = self.diffu_rep_pre(
+            rep_diffu,
+            pretrain_flag=False
+        )
+
+        log_probs = F.log_softmax(
+            scores, dim=-1
+        )
+
+        # Original hard-target CE
+        hard_ce = F.nll_loss(
+            log_probs,
+            labels.view(-1),
+            reduction="none"
+        )
+
+        # Target-aware Soft CE
+        neighbor_log_probs = log_probs.gather(
+            dim=1,
+            index=neighbor_ids
+        )
+
+        soft_ce = -(
+            neighbor_probs * neighbor_log_probs
+        ).sum(dim=1)
+
+        return hard_ce, soft_ce
+
     def diffu_rep_pre(self, rep_diffu, pretrain_flag):
         if pretrain_flag:
             scores = torch.matmul(rep_diffu, self.shared_layer(self.souce_embeddings.weight).t())
