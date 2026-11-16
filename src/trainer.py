@@ -292,7 +292,9 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
     if use_agent:
 
         agent = DebiasAgent(
-            hidden_dim=args.agent_hidden
+            hidden_dim=args.agent_hidden,
+            embedding_dim=model_joint.target_embeddings.embedding_dim,
+            max_len=args.max_len
         ).to(device)
 
         agent_optimizer = optim.Adam(
@@ -316,14 +318,6 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
     for epoch_temp in range(epochs):
 
         model_joint.train()
-        if use_agent:
-            epoch_b3_stats = {
-                "copies": 0,
-                "replaced": 0,
-                "too_short": 0,
-                "no_older_popular": 0,
-                "no_candidate": 0
-            }
         epoch_train_data = train_data.sample(
             frac=1.0,
             random_state=args.random_seed + epoch_temp
@@ -344,11 +338,24 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
             tail_alphas = None
 
             # ==============================
-            # Step 2: Continuous Model C
+            # Step 2: Build Batch Tensors
             # ==============================
+            seq = torch.as_tensor(
+                batch_df["seq"].tolist(),
+                dtype=torch.long,
+                device=device
+            )
 
+            target = torch.as_tensor(
+                batch_df["next"].tolist(),
+                dtype=torch.long,
+                device=device
+            ).unsqueeze(1)
+
+            # ==============================
+            # Step 3: NN-based Reweighting
+            # ==============================
             if use_agent:
-
                 states, eligible_mask = build_sample_states(
                     batch_df,
                     popular_items,
@@ -366,25 +373,15 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                     agent,
                     states,
                     eligible_mask,
+                    seq,
+                    target.view(-1),
+                    model_joint.target_embeddings.weight,
                     training=True
                 )
 
+                # Recommendation model uses detached weights.
+                # Agent is trained separately by REINFORCE.
                 batch_weights = sample_weights.detach()
-            # ==============================
-            # Step 3: Build Tensors
-            # ==============================
-
-            seq = torch.as_tensor(
-                batch_df["seq"].tolist(),
-                dtype=torch.long,
-                device=device
-            )
-
-            target = torch.as_tensor(
-                batch_df["next"].tolist(),
-                dtype=torch.long,
-                device=device
-            ).unsqueeze(1)
 
             optimizer.zero_grad()
 
@@ -589,27 +586,6 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
 
                     print(message)
                     logger.info(message)
-        # B3 Epoch Statistics
-        if use_agent:
-            total = epoch_b3_stats["copies"]
-            replaced = epoch_b3_stats["replaced"]
-
-            rate = replaced / total if total > 0 else 0.0
-
-            b3_message = (
-                f"B3 Epoch={epoch_temp}, "
-                f"Copies={total}, "
-                f"Replaced={replaced}, "
-                f"ReplacementRate={rate:.2%}, "
-                f"TooShort={epoch_b3_stats['too_short']}, "
-                f"NoOlderPopular="
-                f"{epoch_b3_stats['no_older_popular']}, "
-                f"NoCandidate="
-                f"{epoch_b3_stats['no_candidate']}"
-            )
-
-            print(b3_message)
-            logger.info(b3_message)
         print('Epoch: {}'.format(epoch_temp))
         logger.info('Epoch: {}'.format(epoch_temp))
         lr_scheduler.step()
@@ -754,7 +730,7 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
 
         torch.save(
             best_agent_state,
-            model_dir + "/agent_policy.pth"
+            model_dir + "/agent_policy_nn.pth"
         )
 
         print("Agent Policy Saved")
