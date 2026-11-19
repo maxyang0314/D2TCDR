@@ -40,6 +40,25 @@ parser.add_argument('--popular_ratio', type=float, default=0.2, help='Top ratio 
 parser.add_argument('--agent_enabled', type=int, default=0, choices=[0, 1])
 parser.add_argument('--agent_lr', type=float, default=0.0001)
 parser.add_argument('--agent_hidden', type=int, default=32)
+parser.add_argument(
+    '--agent_mode',
+    type=str,
+    default='rl',
+    choices=['rl', 'rule']
+)
+
+parser.add_argument(
+    '--agent_recent_tail',
+    type=int,
+    default=0,
+    choices=[0, 1]
+)
+
+parser.add_argument(
+    '--run_name',
+    type=str,
+    default=''
+)
 # ==============================
 # Reward Settings
 # ==============================
@@ -124,17 +143,19 @@ def main(args):
     # ==============================
 
     if args.agent_enabled:
-        if (
-            args.reward_ref_overall is None
-            or args.reward_ref_popular is None
-        ):
-            raise ValueError(
-                "Agent requires reward baseline references."
-            )
+
+        if args.agent_mode == "rl":
+            if (
+                args.reward_ref_overall is None
+                or args.reward_ref_popular is None
+            ):
+                raise ValueError(
+                    "RL requires reward baseline references."
+                )
 
         if args.num_gpu != 1:
             raise ValueError(
-                "Agent prototype currently supports one GPU."
+                "Reweighting currently supports one GPU."
             )
 
     if not 0 < args.reward_holdout_ratio < 1:
@@ -298,19 +319,27 @@ def main(args):
         reward_data=t_reward_data
     )
 
-    target_model_path = (
-    "./saved_model/"
-    + args.s_dataset
-    + "_"
-    + args.t_dataset
-    + (
-        "/target_model_nn.pth"
-        if args.agent_enabled
-        else "/target_model.pth"
-    )
-)
+    if args.agent_enabled:
+        run_label = (
+            args.run_name
+            or f"{args.agent_mode}_"
+            f"{'rtr' if args.agent_recent_tail else 'hprf'}"
+        )
 
-    torch.save(best_model.state_dict(), target_model_path)
+        filename = f"target_model_{run_label}.pth"
+
+    else:
+        filename = "target_model.pth"
+
+    target_model_path = os.path.join(
+        model_dir,
+        filename
+    )
+
+    torch.save(
+        best_model.state_dict(),
+        target_model_path
+    )
 
     print("Target model saved at:", target_model_path)
     logger.info("Target model saved at: %s", target_model_path)

@@ -14,7 +14,8 @@ from agent.state import (
 
 from agent.policy import (
     DebiasAgent,
-    sample_actions
+    sample_actions,
+    rule_based_weights
 )
 
 from agent.reward import (
@@ -250,9 +251,16 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
     # Agent Initialization
     # ==============================
 
-    use_agent = (
+    # Both rule-based and RL need reweighting
+    use_reweighting = (
         not pretrain_flag
         and args.agent_enabled == 1
+    )
+
+    # Only RL needs an agent and REINFORCE
+    use_agent = (
+        use_reweighting
+        and args.agent_mode == "rl"
     )
 
     best_model = copy.deepcopy(model_joint)
@@ -290,11 +298,9 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
             reward_subset = reward_data.copy()
 
     if use_agent:
-
         agent = DebiasAgent(
             hidden_dim=args.agent_hidden,
-            embedding_dim=model_joint.target_embeddings.embedding_dim,
-            max_len=args.max_len
+            state_dim=2 + args.agent_recent_tail
         ).to(device)
 
         agent_optimizer = optim.Adam(
@@ -352,36 +358,50 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                 device=device
             ).unsqueeze(1)
 
+            
             # ==============================
-            # Step 3: NN-based Reweighting
+            # Step 3: Per-sample Reweighting
             # ==============================
-            if use_agent:
+            if use_reweighting:
+
                 states, eligible_mask = build_sample_states(
                     batch_df,
                     popular_items,
                     tail_items,
                     target_counter,
                     max_frequency,
-                    device
+                    device,
+                    include_recent_tail=bool(
+                        args.agent_recent_tail
+                    )
                 )
 
-                (
-                    sample_weights,
-                    policy_log_prob,
-                    tail_alphas
-                ) = sample_actions(
-                    agent,
-                    states,
-                    eligible_mask,
-                    seq,
-                    target.view(-1),
-                    model_joint.target_embeddings.weight,
-                    training=True
-                )
+                if use_agent:
+                    # RL determines alpha
+                    (
+                        sample_weights,
+                        policy_log_prob,
+                        tail_alphas
+                    ) = sample_actions(
+                        agent,
+                        states,
+                        eligible_mask,
+                        training=True
+                    )
 
-                # Recommendation model uses detached weights.
-                # Agent is trained separately by REINFORCE.
+                else:
+                    # Fixed rule determines alpha
+                    sample_weights = rule_based_weights(
+                        states,
+                        eligible_mask,
+                        use_recent_tail=bool(
+                            args.agent_recent_tail
+                        )
+                    )
+
+                # D2TCDR uses detached weights
                 batch_weights = sample_weights.detach()
+
 
             optimizer.zero_grad()
 
@@ -430,7 +450,7 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
             # Step 6: Recommendation Loss
             # ==============================
 
-            if use_agent:
+            if use_reweighting:
 
                 ce_per_sample = (
                     model_joint.loss_diffu_ce_per_sample(
@@ -728,9 +748,14 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
             exist_ok=True
         )
 
+        run_label = (
+            args.run_name
+            or f"rl_{'rtr' if args.agent_recent_tail else 'hprf'}"
+        )
+
         torch.save(
             best_agent_state,
-            model_dir + "/agent_policy_nn.pth"
+            model_dir + f"/agent_policy_{run_label}.pth"
         )
 
         print("Agent Policy Saved")
