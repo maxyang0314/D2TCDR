@@ -6,11 +6,11 @@ from torch.distributions import Beta
 
 class DebiasAgent(nn.Module):
 
-    def __init__(self, hidden_dim=32):
+    def __init__(self, hidden_dim=32, state_dim=2):
         super().__init__()
 
         self.encoder = nn.Sequential(
-            nn.Linear(2, hidden_dim),
+            nn.Linear(state_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU()

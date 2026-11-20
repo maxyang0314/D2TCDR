@@ -290,7 +290,7 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
         target_counter, max_frequency = (
             build_target_frequency(train_data)
         )
-
+   
         # ==============================
         # Load Frozen Baseline Ranks
         # ==============================
@@ -300,10 +300,20 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
             'uniform_match'
         )
 
-        if (
+        # E5/E6 always need ranks.
+        # E7 needs ranks only when TRD is enabled.
+        need_rank_cache = (
             use_reweighting
-            and args.agent_mode in rank_modes
-        ):
+            and (
+                args.agent_mode in rank_modes
+                or (
+                    use_agent
+                    and args.agent_use_trd == 1
+                )
+            )
+        )
+
+        if need_rank_cache:
 
             if not 0.0 <= args.rank_alpha <= 1.0:
                 raise ValueError(
@@ -391,27 +401,39 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                 raise ValueError(
                     "Non-Tail ranks must be -1."
                 )
-
-            # Compute E6 matched alpha
-            uniform_alpha = matched_uniform_alpha(
-                train_data,
-                tail_items,
-                target_counter,
-                max_frequency,
-                near_alpha=args.rank_alpha
-            )
-
+          
             near_count = int(
                 tail_ranks.between(11, 20).sum()
             )
 
-            print(
-                f"TRD Rank Cache: "
-                f"{len(tail_ranks)} Tail-next; "
-                f"{near_count} near-miss; "
-                f"near_alpha={args.rank_alpha:.4f}; "
-                f"uniform_alpha={uniform_alpha:.6f}"
-            )
+            if args.agent_mode in rank_modes:
+
+                # E5/E6 only
+                uniform_alpha = matched_uniform_alpha(
+                    train_data,
+                    tail_items,
+                    target_counter,
+                    max_frequency,
+                    near_alpha=args.rank_alpha
+                )
+
+                print(
+                    f"Rule Rank Cache: "
+                    f"{len(tail_ranks)} Tail-next; "
+                    f"{near_count} near-miss; "
+                    f"near_alpha={args.rank_alpha:.4f}; "
+                    f"uniform_alpha={uniform_alpha:.6f}"
+                )
+
+            else:
+
+                # E7: TRD as RL State
+                print(
+                    f"RL TRD State Enabled: "
+                    f"{len(tail_ranks)} Tail-next; "
+                    f"{near_count} near-miss"
+                )
+
 
         if reward_data is None or len(reward_data) == 0:
             raise ValueError(
@@ -427,9 +449,18 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
 
     if use_agent:
 
+        state_dim = (
+            2 + args.agent_use_trd
+        )
+
         agent = DebiasAgent(
-            hidden_dim=args.agent_hidden
+            hidden_dim=args.agent_hidden,
+            state_dim=state_dim
         ).to(device)
+
+        print(
+            f"Agent State Dimension: {state_dim}"
+        )
 
         agent_optimizer = optim.Adam(
             agent.parameters(),
@@ -485,14 +516,17 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
 
             if use_reweighting:
 
-                # Original HPR and F states
                 states, eligible_mask = build_sample_states(
                     batch_df,
                     popular_items,
                     tail_items,
                     target_counter,
                     max_frequency,
-                    device
+                    device,
+                    include_trd=(
+                        use_agent
+                        and args.agent_use_trd == 1
+                    )
                 )
 
                 if use_agent:
@@ -751,6 +785,16 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                         f"WeightDelta={weight_delta:.8f}"
                     )
 
+                    if args.agent_use_trd:
+
+                        tail_mean_trd = (
+                            tail_states[:, 2].mean().item()
+                        )
+
+                        message += (
+                            f", TailMeanTRD={tail_mean_trd:.4f}"
+                        )
+                        
                     print(message)
                     logger.info(message)
         # B3 Epoch Statistics

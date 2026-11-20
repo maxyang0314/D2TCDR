@@ -40,7 +40,13 @@ parser.add_argument('--popular_ratio', type=float, default=0.2, help='Top ratio 
 parser.add_argument('--agent_enabled', type=int, default=0, choices=[0, 1])
 parser.add_argument('--agent_lr', type=float, default=0.0001)
 parser.add_argument('--agent_hidden', type=int, default=32)
-
+parser.add_argument(
+    '--agent_use_trd',
+    type=int,
+    default=0,
+    choices=[0, 1],
+    help='1: RL uses HPR, F, TRD; 0: RL uses HPR, F'
+)
 # ==============================
 # Reweighting Mode Settings
 # ==============================
