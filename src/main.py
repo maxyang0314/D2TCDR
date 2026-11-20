@@ -40,6 +40,40 @@ parser.add_argument('--popular_ratio', type=float, default=0.2, help='Top ratio 
 parser.add_argument('--agent_enabled', type=int, default=0, choices=[0, 1])
 parser.add_argument('--agent_lr', type=float, default=0.0001)
 parser.add_argument('--agent_hidden', type=int, default=32)
+
+# ==============================
+# Reweighting Mode Settings
+# ==============================
+
+parser.add_argument(
+    '--agent_mode',
+    type=str,
+    default='rl',
+    choices=[
+        'rl',
+        'rank_rule',
+        'uniform_match'
+    ]
+)
+
+parser.add_argument(
+    '--rank_csv',
+    type=str,
+    default='analysis/movie_video_teacher_ranks.csv'
+)
+
+parser.add_argument(
+    '--rank_alpha',
+    type=float,
+    default=0.6
+)
+
+parser.add_argument(
+    '--run_name',
+    type=str,
+    default=''
+)
+
 # ==============================
 # Reward Settings
 # ==============================
@@ -123,20 +157,23 @@ def main(args):
     # ==============================
     # Reward Holdout Split
     # ==============================
-
     if args.agent_enabled:
-        if (
-            args.reward_ref_overall is None
-            or args.reward_ref_popular is None
-        ):
-            raise ValueError(
-                "Agent requires reward baseline references."
-            )
 
         if args.num_gpu != 1:
             raise ValueError(
-                "Agent prototype currently supports one GPU."
+                "Reweighting currently supports one GPU."
             )
+
+        # Only RL requires reward references
+        if args.agent_mode == 'rl':
+
+            if (
+                args.reward_ref_overall is None
+                or args.reward_ref_popular is None
+            ):
+                raise ValueError(
+                    "RL requires reward baseline references."
+                )
 
     if not 0 < args.reward_holdout_ratio < 1:
         raise ValueError("Invalid reward holdout ratio.")
@@ -289,7 +326,7 @@ def main(args):
     # =====================================
     fusion_base_model = None
 
-    if args.agent_enabled == 1:
+    if args.agent_enabled == 1 and args.agent_mode == 'rl':
 
         baseline_path = args.fusion_baseline_checkpoint
 
@@ -332,15 +369,43 @@ def main(args):
         reward_data=t_reward_data
     )
 
-    target_model_path = (
-        "./saved_model/"
-        + args.s_dataset
-        + "_"
-        + args.t_dataset
-        + "/target_model.pth"
+    
+    # ==============================
+    # Save Target Model
+    # ==============================
+
+    if args.agent_enabled:
+
+        run_label = (
+            args.run_name
+            if args.run_name
+            else args.agent_mode
+        )
+
+        if not run_label.replace(
+            '_', ''
+        ).replace('-', '').isalnum():
+            raise ValueError(
+                "run_name may contain only letters, "
+                "numbers, '_' or '-'."
+            )
+
+        filename = (
+            f"target_model_{run_label}.pth"
+        )
+
+    else:
+        filename = "target_model.pth"
+
+    target_model_path = os.path.join(
+        model_dir,
+        filename
     )
 
-    torch.save(best_model.state_dict(), target_model_path)
+    torch.save(
+        best_model.state_dict(),
+        target_model_path
+    )
 
     print("Target model saved at:", target_model_path)
     logger.info("Target model saved at: %s", target_model_path)

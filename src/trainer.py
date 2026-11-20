@@ -4,6 +4,7 @@ import datetime
 import torch
 import numpy as np
 import copy
+import pandas as pd
 
 from collections import Counter
 
@@ -15,6 +16,12 @@ from agent.state import (
 from agent.policy import (
     DebiasAgent,
     sample_actions
+)
+
+from agent.near_miss import (
+    make_row_hash,
+    matched_uniform_alpha,
+    rank_rule_weights
 )
 
 from agent.reward import (
@@ -250,9 +257,16 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
     # Agent Initialization
     # ==============================
 
-    use_agent = (
+    # Does this training stage use reweighting?
+    use_reweighting = (
         not pretrain_flag
         and args.agent_enabled == 1
+    )
+
+    # Only the RL mode trains an Agent
+    use_agent = (
+        use_reweighting
+        and args.agent_mode == 'rl'
     )
 
     best_model = copy.deepcopy(model_joint)
@@ -276,6 +290,128 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
         target_counter, max_frequency = (
             build_target_frequency(train_data)
         )
+
+        # ==============================
+        # Load Frozen Baseline Ranks
+        # ==============================
+
+        rank_modes = (
+            'rank_rule',
+            'uniform_match'
+        )
+
+        if (
+            use_reweighting
+            and args.agent_mode in rank_modes
+        ):
+
+            if not 0.0 <= args.rank_alpha <= 1.0:
+                raise ValueError(
+                    "rank_alpha must be between 0 and 1."
+                )
+
+            # Load Rank CSV
+            rank_df = pd.read_csv(
+                args.rank_csv
+            )
+
+            # Verify sample count
+            if len(rank_df) != len(train_data):
+                raise ValueError(
+                    "Rank CSV size mismatch. "
+                    "Run full rank analysis first."
+                )
+
+            # Verify row IDs
+            if not np.array_equal(
+                rank_df["row_id"].to_numpy(),
+                np.arange(len(train_data))
+            ):
+                raise ValueError(
+                    "Rank CSV row IDs mismatch."
+                )
+
+            # Verify target IDs
+            if not np.array_equal(
+                rank_df["target"].astype(int).to_numpy(),
+                train_data["next"].astype(int).to_numpy()
+            ):
+                raise ValueError(
+                    "Rank CSV target IDs mismatch."
+                )
+
+            # Verify history content
+            current_hashes = [
+                make_row_hash(seq, target)
+                for seq, target in zip(
+                    train_data["seq"],
+                    train_data["next"]
+                )
+            ]
+
+            if (
+                rank_df["row_hash"].tolist()
+                != current_hashes
+            ):
+                raise ValueError(
+                    "Rank CSV history mismatch."
+                )
+
+            # Add teacher rank to training rows
+            train_data = train_data.copy()
+
+            train_data["teacher_rank"] = (
+                rank_df["teacher_rank"]
+                .astype(int)
+                .to_numpy()
+            )
+
+            # Verify complete Tail-next ranks
+            tail_mask = train_data["next"].isin(
+                tail_items
+            )
+
+            tail_ranks = train_data.loc[
+                tail_mask,
+                "teacher_rank"
+            ]
+
+            if not tail_ranks.between(
+                1, 101
+            ).all():
+                raise ValueError(
+                    "Missing Tail-next ranks. "
+                    "Use --max-tail-samples 0."
+                )
+
+            if not train_data.loc[
+                ~tail_mask,
+                "teacher_rank"
+            ].eq(-1).all():
+                raise ValueError(
+                    "Non-Tail ranks must be -1."
+                )
+
+            # Compute E6 matched alpha
+            uniform_alpha = matched_uniform_alpha(
+                train_data,
+                tail_items,
+                target_counter,
+                max_frequency,
+                near_alpha=args.rank_alpha
+            )
+
+            near_count = int(
+                tail_ranks.between(11, 20).sum()
+            )
+
+            print(
+                f"TRD Rank Cache: "
+                f"{len(tail_ranks)} Tail-next; "
+                f"{near_count} near-miss; "
+                f"near_alpha={args.rank_alpha:.4f}; "
+                f"uniform_alpha={uniform_alpha:.6f}"
+            )
 
         if reward_data is None or len(reward_data) == 0:
             raise ValueError(
@@ -344,11 +480,12 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
             tail_alphas = None
 
             # ==============================
-            # Step 2: Continuous Model C
+            # Step 2: Per-sample Reweighting
             # ==============================
 
-            if use_agent:
+            if use_reweighting:
 
+                # Original HPR and F states
                 states, eligible_mask = build_sample_states(
                     batch_df,
                     popular_items,
@@ -358,18 +495,45 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
                     device
                 )
 
-                (
-                    sample_weights,
-                    policy_log_prob,
-                    tail_alphas
-                ) = sample_actions(
-                    agent,
-                    states,
-                    eligible_mask,
-                    training=True
-                )
+                if use_agent:
+
+                    # ==============================
+                    # E3: RL Continuous Model C
+                    # ==============================
+                    (
+                        sample_weights,
+                        policy_log_prob,
+                        tail_alphas
+                    ) = sample_actions(
+                        agent,
+                        states,
+                        eligible_mask,
+                        training=True
+                    )
+
+                else:
+
+                    # ==============================
+                    # E5 / E6: Rule-based
+                    # ==============================
+
+                    ranks = torch.as_tensor(
+                        batch_df["teacher_rank"].to_numpy(),
+                        dtype=torch.long,
+                        device=device
+                    )
+
+                    sample_weights = rank_rule_weights(
+                        states,
+                        eligible_mask,
+                        ranks,
+                        mode=args.agent_mode,
+                        near_alpha=args.rank_alpha,
+                        uniform_alpha=uniform_alpha
+                    )
 
                 batch_weights = sample_weights.detach()
+
             # ==============================
             # Step 3: Build Tensors
             # ==============================
@@ -433,7 +597,7 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
             # Step 6: Recommendation Loss
             # ==============================
 
-            if use_agent:
+            if use_reweighting:
 
                 ce_per_sample = (
                     model_joint.loss_diffu_ce_per_sample(
@@ -752,9 +916,15 @@ def model_train(train_data, val_data, test_data, con_data, model_joint, args, lo
             exist_ok=True
         )
 
+        policy_name = (
+            f"agent_policy_{args.run_name}.pth"
+            if args.run_name
+            else "agent_policy.pth"
+        )
+
         torch.save(
             best_agent_state,
-            model_dir + "/agent_policy.pth"
+            model_dir + "/" + policy_name
         )
 
         print("Agent Policy Saved")

@@ -1,0 +1,95 @@
+Namespace(agent_enabled=1, agent_hidden=32, agent_lr=0.0001, agent_mode='rank_rule', batch_size=512, decay_step=100, description='Diffu_norm_score', device='cuda', diffusion_steps=32, dropout=0.1, emb_dropout=0.3, epochs=100, eval_interval=5, fusion_baseline_checkpoint='./saved_model/movie_video/baseline_target_model.pth', gamma=0.1, hidden_act='gelu', hidden_size=128, lambda_uncertainty=0.001, log_file='log/', loss_lambda=1, lr=0.001, max_len=8, metric_ks=[5, 10, 20], momentum=None, noise_schedule='trunc_lin', num_blocks=4, num_gpu=1, optimizer='Adam', p=0.3, patience=2, popular_ratio=0.2, random_seed=1997, rank_alpha=0.6, rank_csv='analysis/movie_video_teacher_ranks.csv', rescale_timesteps=True, reward_baseline_window=50, reward_epsilon_overall=0.002, reward_epsilon_popular=0.002, reward_eval_samples=1024, reward_holdout_ratio=0.1, reward_lambda_overall=1.0, reward_lambda_popular=1.0, reward_ref_overall=None, reward_ref_popular=None, run_name='E5_rank_near', s_dataset='movie', schedule_sampler_name='lossaware', skip_source_pretrain=True, t_dataset='video', w=1.0, weight_decay=0)
+Target Train: 14794
+Reward Set: 1644
+main.py:309: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  torch.load(
+TRD Rank Cache: 4473 Tail-next; 1566 near-miss; near_alpha=0.6000; uniform_alpha=0.213339
+Epoch: 0
+start predicting:  2026-11-20 15:13:14.912140
+Best Validation NDCG@10: 3.8648197427392006
+Epoch: 1
+start predicting:  2026-11-20 15:13:17.026562
+Best Validation NDCG@10: 6.243308633565903
+Epoch: 2
+start predicting:  2026-11-20 15:13:19.082499
+Best Validation NDCG@10: 10.521835274994373
+Epoch: 3
+start predicting:  2026-11-20 15:13:21.171865
+Best Validation NDCG@10: 13.949799537658691
+Epoch: 4
+start predicting:  2026-11-20 15:13:23.277709
+Best Validation NDCG@10: 17.76280179619789
+Epoch: 5
+start predicting:  2026-11-20 15:13:25.358441
+Best Validation NDCG@10: 21.21501788496971
+Epoch: 6
+start predicting:  2026-11-20 15:13:27.491126
+Best Validation NDCG@10: 23.662105947732925
+Epoch: 7
+start predicting:  2026-11-20 15:13:29.554300
+Best Validation NDCG@10: 25.34305565059185
+Epoch: 8
+start predicting:  2026-11-20 15:13:31.666889
+Best Validation NDCG@10: 27.00781151652336
+Epoch: 9
+start predicting:  2026-11-20 15:13:33.729370
+Best Validation NDCG@10: 28.294159471988678
+Epoch: 10
+start predicting:  2026-11-20 15:13:35.854604
+Best Validation NDCG@10: 28.994236886501312
+Epoch: 11
+start predicting:  2026-11-20 15:13:38.090491
+Best Validation NDCG@10: 29.48134019970894
+Epoch: 12
+start predicting:  2026-11-20 15:13:40.251779
+Best Validation NDCG@10: 29.98577430844307
+Epoch: 13
+start predicting:  2026-11-20 15:13:42.423286
+Best Validation NDCG@10: 30.539381504058838
+Epoch: 14
+start predicting:  2026-11-20 15:13:44.683012
+Best Validation NDCG@10: 30.559469014406204
+Epoch: 15
+start predicting:  2026-11-20 15:13:46.761965
+Best Validation NDCG@10: 30.728555470705032
+Epoch: 16
+start predicting:  2026-11-20 15:13:48.857271
+Best Validation NDCG@10: 30.831053107976913
+Epoch: 17
+start predicting:  2026-11-20 15:13:51.081160
+Best Validation NDCG@10: 31.047838181257248
+Epoch: 18
+start predicting:  2026-11-20 15:13:53.207256
+Epoch: 19
+start predicting:  2026-11-20 15:13:55.311532
+Best Validation NDCG@10: 31.133292615413666
+Epoch: 20
+start predicting:  2026-11-20 15:13:57.442075
+Epoch: 21
+start predicting:  2026-11-20 15:13:59.569842
+Epoch: 22
+start predicting:  2026-11-20 15:14:01.696068
+Epoch: 23
+start predicting:  2026-11-20 15:14:03.827581
+Epoch: 24
+start predicting:  2026-11-20 15:14:05.946793
+REWARD_SET_RESULTS: {'Overall_HR@10': 0.4775390625, 'Popular_HR@10': 0.6949924127465857, 'Tail_HR@10': 0.11313868613138686, 'counts': {'Overall': 1024, 'Popular': 659, 'Tail': 274}}
+Target Popularity Definition---------------------------------------------
+{'domain': 'Target', 'popular_ratio': 0.2, 'observed_train_items': 20880, 'popular_items': 4176, 'unpopular_seen_items': 16704, 'unseen_items_in_test': 'calculated from test ground truth'}
+Target Test Overall------------------------------------------------------
+{'HR@5': 38.1323, 'NDCG@5': 28.6284, 'HR@10': 48.9786, 'NDCG@10': 32.1567, 'HR@20': 61.2354, 'NDCG@20': 35.2233}
+Target Test Group Size----------------------------------------------
+{'domain': 'Target', 'Overall_test_samples': 2056, 'Popular_test_samples': 1358, 'Unpopular_seen_test_samples': 511, 'Unseen_test_samples': 187, 'Grouped_test_samples': 2056}
+Target Test Popular Ground Truth-------------------------------------
+{'HR@5': 55.9647, 'NDCG@5': 42.4842, 'HR@10': 69.2931, 'NDCG@10': 46.8376, 'HR@20': 82.4006, 'NDCG@20': 50.1331}
+Target Test Unpopular-Seen Ground Truth------------------------------
+{'HR@5': 4.6967, 'NDCG@5': 2.2827, 'HR@10': 12.9159, 'NDCG@10': 4.9092, 'HR@20': 27.3973, 'NDCG@20': 8.4898}
+Target Test Unseen Ground Truth--------------------------------------
+{'HR@5': 0.0, 'NDCG@5': 0.0, 'HR@10': 0.0, 'NDCG@10': 0.0, 'HR@20': 0.0, 'NDCG@20': 0.0}
+Target Recommendation Popularity-------------------------------------
+{'PopularRatio@5': 84.8638, 'PopularRatio@10': 70.0389, 'PopularRatio@20': 54.0929}
+Best Eval---------------------------------------------------------
+{'Best_HR@5': 38.6719, 'Best_NDCG@5': 28.1639, 'Best_HR@10': 48.3398, 'Best_NDCG@10': 31.1333, 'Best_HR@20': 60.9863, 'Best_NDCG@20': 34.1127}
+{'Best_epoch_HR@5': 19, 'Best_epoch_NDCG@5': 19, 'Best_epoch_HR@10': 18, 'Best_epoch_NDCG@10': 19, 'Best_epoch_HR@20': 13, 'Best_epoch_NDCG@20': 19}
+Namespace(agent_enabled=1, agent_hidden=32, agent_lr=0.0001, agent_mode='rank_rule', batch_size=512, decay_step=100, description='Diffu_norm_score', device='cuda', diffusion_steps=32, dropout=0.1, emb_dropout=0.3, epochs=100, eval_interval=1, fusion_baseline_checkpoint='./saved_model/movie_video/baseline_target_model.pth', gamma=0.1, hidden_act='gelu', hidden_size=128, item_num=23978, lambda_uncertainty=0.001, log_file='log/', loss_lambda=1, lr=0.001, max_len=8, metric_ks=[5, 10, 20], momentum=None, noise_schedule='trunc_lin', num_blocks=4, num_gpu=1, optimizer='Adam', p=0.3, patience=5, popular_ratio=0.2, pretrain_flag=True, random_seed=1997, rank_alpha=0.6, rank_csv='analysis/movie_video_teacher_ranks.csv', rescale_timesteps=True, reward_baseline_window=50, reward_epsilon_overall=0.002, reward_epsilon_popular=0.002, reward_eval_samples=1024, reward_holdout_ratio=0.1, reward_lambda_overall=1.0, reward_lambda_popular=1.0, reward_ref_overall=None, reward_ref_popular=None, run_name='E5_rank_near', s_dataset='movie', schedule_sampler_name='lossaware', skip_source_pretrain=True, source_item_num=98507, t_dataset='video', target_item_num=23978, w=1.0, weight_decay=0)
+Target model saved at: ./saved_model/movie_video/target_model_E5_rank_near.pth
