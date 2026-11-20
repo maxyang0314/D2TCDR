@@ -1,0 +1,15 @@
+{
+  "training_rows": 14794,
+  "total_tail_next": 4473,
+  "ranked_tail_next": 4473,
+  "checkpoint": "saved_model/movie_video/target_model.pth",
+  "rank_definition": "1 true + 100 fixed random negative candidates",
+  "seed": 1997,
+  "bins": {
+    "01-10": 1753,
+    "11-20": 1566,
+    "21-50": 1145,
+    "51-100": 9,
+    "101": 0
+  }
+}

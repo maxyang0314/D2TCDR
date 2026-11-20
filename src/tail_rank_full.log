@@ -1,0 +1,38 @@
+Ranked Tail-next samples: 8/4473
+Ranked Tail-next samples: 168/4473
+Ranked Tail-next samples: 328/4473
+Ranked Tail-next samples: 488/4473
+Ranked Tail-next samples: 648/4473
+Ranked Tail-next samples: 808/4473
+Ranked Tail-next samples: 968/4473
+Ranked Tail-next samples: 1128/4473
+Ranked Tail-next samples: 1288/4473
+Ranked Tail-next samples: 1448/4473
+Ranked Tail-next samples: 1608/4473
+Ranked Tail-next samples: 1768/4473
+Ranked Tail-next samples: 1928/4473
+Ranked Tail-next samples: 2088/4473
+Ranked Tail-next samples: 2248/4473
+Ranked Tail-next samples: 2408/4473
+Ranked Tail-next samples: 2568/4473
+Ranked Tail-next samples: 2728/4473
+Ranked Tail-next samples: 2888/4473
+Ranked Tail-next samples: 3048/4473
+Ranked Tail-next samples: 3208/4473
+Ranked Tail-next samples: 3368/4473
+Ranked Tail-next samples: 3528/4473
+Ranked Tail-next samples: 3688/4473
+Ranked Tail-next samples: 3848/4473
+Ranked Tail-next samples: 4008/4473
+Ranked Tail-next samples: 4168/4473
+Ranked Tail-next samples: 4328/4473
+
+===== Tail-next sampled rank distribution =====
+Train rows: 14794 | Total Tail-next: 4473 | Ranked: 4473
+Rank  01-10:    1753 ( 39.19%)
+Rank  11-20:    1566 ( 35.01%)
+Rank  21-50:    1145 ( 25.60%)
+Rank 51-100:       9 (  0.20%)
+Rank    101:       0 (  0.00%)
+Saved: analysis/movie_video_teacher_ranks.csv
+Saved: analysis/movie_video_teacher_ranks.summary.json
